@@ -1,7 +1,7 @@
 [package]
 name = "brc-20"
 categories = ["cryptography::cryptocurrencies"]
-license = "SEE LICENSE IN LICENSE"
+license = "MIT"
 version = "0.1.0"
 authors = ["Finity Technologies"]
 description = "A library for working with BRC-20 tokens."
