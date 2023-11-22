@@ -1,5 +1,4 @@
-use bitcoin_hashes::sha256;
-use bitcoin_hashes::Hash;
+use bitcoin_hashes::{sha256, Hash};
 
 /// Compute sha256 hash of bytes
 pub fn sha256sum(bytes: &[u8]) -> Vec<u8> {
