@@ -1,17 +1,12 @@
 use bitcoin::absolute::LockTime;
-use bitcoin::opcodes::all::{OP_CHECKSIG, OP_DUP, OP_ENDIF, OP_EQUALVERIFY, OP_HASH160, OP_IF};
-use bitcoin::opcodes::{OP_0, OP_FALSE};
-use bitcoin::script::Builder as ScriptBuilder;
-use bitcoin::secp256k1::ecdsa::Signature;
-use bitcoin::secp256k1::{self};
-use bitcoin::sighash::SighashCache;
 use bitcoin::transaction::Version;
 use bitcoin::{
-    Address, Amount, Network, OutPoint, PrivateKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
-    Txid, Witness,
+    Address, Amount, OutPoint, PrivateKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid,
+    Witness,
 };
-use bitcoin_hashes::Hash;
 
+use super::signature::sign_transaction;
+use super::POSTAGE;
 use crate::Brc20Result;
 
 /// Arguments for creating a reveal transaction
@@ -37,5 +32,32 @@ pub fn create_reveal_transaction(args: RevealTransactionArgs) -> Brc20Result<Tra
         txid: args.input_tx,
         vout: args.input_index,
     };
-    let destination_address = args.recipient_address.script_pubkey();
+    // tx out
+    let tx_out = vec![TxOut {
+        value: Amount::from_sat(POSTAGE),
+        script_pubkey: args.recipient_address.script_pubkey(),
+    }];
+    // txin
+    let tx_in = vec![TxIn {
+        previous_output,
+        script_sig: ScriptBuf::new(),
+        sequence: Sequence::from_consensus(0xffffffff), // TODO: what is this?
+        witness: Witness::new(),
+    }];
+
+    // make transaction and sign it
+    let mut tx = Transaction {
+        version: Version::TWO,
+        lock_time: LockTime::ZERO,
+        input: tx_in,
+        output: tx_out,
+    };
+    sign_transaction(
+        &mut tx,
+        &args.private_key,
+        args.input_index,
+        &args.redeem_script,
+    )?;
+
+    Ok(tx)
 }

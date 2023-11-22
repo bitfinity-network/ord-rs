@@ -2,20 +2,16 @@ use bitcoin::absolute::LockTime;
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_DUP, OP_ENDIF, OP_EQUALVERIFY, OP_HASH160, OP_IF};
 use bitcoin::opcodes::{OP_0, OP_FALSE};
 use bitcoin::script::Builder as ScriptBuilder;
-use bitcoin::secp256k1::ecdsa::Signature;
-use bitcoin::secp256k1::{self};
-use bitcoin::sighash::SighashCache;
 use bitcoin::transaction::Version;
 use bitcoin::{
-    Address, Amount, Network, OutPoint, PrivateKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
-    Txid, Witness,
+    secp256k1, Address, Amount, Network, OutPoint, PrivateKey, ScriptBuf, Sequence, Transaction,
+    TxIn, TxOut, Txid, Witness,
 };
-use bitcoin_hashes::Hash;
 
+use super::signature::sign_transaction;
+use super::POSTAGE;
 use crate::utils::{bytes_to_push_bytes, h160sum, sha256sum};
 use crate::{Brc20Op, Brc20Result};
-
-use super::POSTAGE;
 
 const REDEEM_SCRIPT_FIXED_LEN: usize = 1 + 1 + 1 + 1 + 1 + 1 + 3 + 16;
 const JSON_CONTENT_TYPE: &str = "application/json";
@@ -91,52 +87,21 @@ pub fn create_commit_transaction(
         witness: Witness::new(),
     }];
 
-    // make transaction and sign
+    // make transaction and sign it
     let mut tx = Transaction {
         version: Version::TWO,
         lock_time: LockTime::ZERO,
         input: tx_in,
         output: tx_out,
     };
-    let mut hash = SighashCache::new(&tx);
-    let signature_hash = hash.p2wpkh_signature_hash(
-        args.input_index as usize, // TODO: in the example is zero???
+    sign_transaction(
+        &mut tx,
+        &args.private_key,
+        args.input_index,
         &txin_script_pubkey,
-        Amount::ZERO,
-        bitcoin::EcdsaSighashType::All,
     )?;
-
-    let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
-    let signature = secp256k1::Secp256k1::new().sign_ecdsa(&message, &args.private_key.inner);
-
-    // Append script signature to tx input
-    append_signature_to_input(&args.private_key, &mut tx, signature)?;
 
     Ok(CreateCommitTransaction { tx, redeem_script })
-}
-
-/// Append signature to tx input
-fn append_signature_to_input(
-    private_key: &PrivateKey,
-    tx: &mut Transaction,
-    signature: Signature,
-) -> Brc20Result<()> {
-    let public_key = bytes_to_push_bytes(
-        &private_key
-            .public_key(&secp256k1::Secp256k1::new())
-            .to_bytes(),
-    )?;
-    let script_sig = ScriptBuilder::new()
-        .push_slice(bytes_to_push_bytes(signature.serialize_der().as_ref())?.as_push_bytes())
-        .push_int(bitcoin::EcdsaSighashType::All as i64)
-        .push_slice(public_key.as_push_bytes())
-        .into_script();
-
-    if let Some(input) = tx.input.get_mut(0) {
-        input.script_sig = script_sig;
-    }
-
-    Ok(())
 }
 
 /// Generate redeem script and then get a pw2sh address to send the commit transaction
