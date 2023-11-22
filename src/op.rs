@@ -1,4 +1,8 @@
+use std::str::FromStr;
+
 use serde_with::{serde_as, DisplayFromStr};
+
+use crate::{Brc20Error, Brc20Result};
 
 const PROTOCOL: &str = "p";
 
@@ -42,6 +46,19 @@ impl Brc20Op {
             tick: tick.to_string(),
             amt,
         })
+    }
+
+    /// Encode the BRC-20 operation as a JSON string
+    pub fn encode(&self) -> Brc20Result<String> {
+        serde_json::to_string(self).map_err(Brc20Error::from)
+    }
+}
+
+impl FromStr for Brc20Op {
+    type Err = Brc20Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(s).map_err(Brc20Error::from)
     }
 }
 
@@ -180,5 +197,18 @@ mod test {
                 amt: 100
             })
         );
+    }
+
+    #[test]
+    fn test_should_encode_and_decode() {
+        let op = Brc20Op::Transfer(Brc20Transfer {
+            protocol: "brc-20".to_string(),
+            tick: "ordi".to_string(),
+            amt: 100,
+        });
+
+        let s = op.encode().unwrap();
+
+        assert_eq!(Brc20Op::from_str(&s).unwrap(), op);
     }
 }
