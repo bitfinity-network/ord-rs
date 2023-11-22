@@ -1,7 +1,7 @@
 use bitcoin_hashes::{hash160, Hash};
 
 pub fn h160sum(bytes: &[u8]) -> Vec<u8> {
-    hash160::Hash::hash(&bytes).to_byte_array().to_vec()
+    hash160::Hash::hash(bytes).to_byte_array().to_vec()
 }
 
 #[cfg(test)]

@@ -15,43 +15,71 @@ use bitcoin_hashes::Hash;
 use crate::utils::{bytes_to_push_bytes, h160sum, sha256sum};
 use crate::{Brc20Op, Brc20Result};
 
+use super::POSTAGE;
+
 const REDEEM_SCRIPT_FIXED_LEN: usize = 1 + 1 + 1 + 1 + 1 + 1 + 3 + 16;
 const JSON_CONTENT_TYPE: &str = "application/json";
-const POSTAGE: u64 = 333;
+
+/// Arguments for creating a commit transaction
+pub struct CreateCommitTransactionArgs {
+    /// Private key of the sender
+    pub private_key: PrivateKey,
+    /// Transaction id of the input
+    pub input_tx: Txid,
+    /// Index of the input in the transaction
+    pub input_index: u32,
+    /// Balance of the input in msat, 100k should be enough
+    pub input_balance_msat: u64,
+    /// Inscription to write
+    pub inscription: Brc20Op,
+    /// Address to send the leftovers BTC of the trasnsaction
+    pub leftovers_recipient: Address,
+    /// Fee to pay for the commit transaction
+    pub commit_fee: u64,
+    /// Fee to pay for the reveal transaction
+    pub reveal_fee: u64,
+    /// Network to use
+    pub network: Network,
+}
+
+pub struct CreateCommitTransaction {
+    /// The transaction to be broadcasted
+    pub tx: Transaction,
+    /// The redeem script to be used in the reveal transaction
+    pub redeem_script: ScriptBuf,
+}
 
 pub fn create_commit_transaction(
-    private_key: &PrivateKey,
-    input_tx: Txid,
-    input_index: u32,
-    input_balance_msat: u64,
-    inscription: Brc20Op,
-    leftovers_recipient: Address,
-    commit_fee: u64,
-    reveal_fee: u64,
-    network: Network,
-) -> Brc20Result<Transaction> {
+    args: CreateCommitTransactionArgs,
+) -> Brc20Result<CreateCommitTransaction> {
     // previous output
     let previous_output = OutPoint {
-        txid: input_tx,
-        vout: input_index,
+        txid: args.input_tx,
+        vout: args.input_index,
     };
     // get txin script pubkey
-    let txin_script_pubkey = generate_txin_script_pubkey(private_key)?;
+    let txin_script_pubkey = generate_txin_script_pubkey(&args.private_key)?;
 
     // get p2wsh address for output of inscription
-    let p2wsh_address = generate_pw2sh_address(private_key, &inscription, network)?;
+    let redeem_script = generate_redeem_script(&args.private_key, &args.inscription)?;
+    let p2wsh_address = generate_pw2sh_address(
+        &args.private_key,
+        &args.inscription,
+        args.network,
+        &redeem_script,
+    )?;
 
     // exceeding amount of transaction to send to leftovers recipient
-    let leftover_amount = input_balance_msat - POSTAGE - commit_fee - reveal_fee;
+    let leftover_amount = args.input_balance_msat - POSTAGE - args.commit_fee - args.reveal_fee;
     // get tx_out
     let tx_out = vec![
         TxOut {
-            value: Amount::from_sat(POSTAGE + reveal_fee),
+            value: Amount::from_sat(POSTAGE + args.reveal_fee),
             script_pubkey: p2wsh_address.script_pubkey(),
         },
         TxOut {
             value: Amount::from_sat(leftover_amount),
-            script_pubkey: leftovers_recipient.script_pubkey(),
+            script_pubkey: args.leftovers_recipient.script_pubkey(),
         },
     ];
 
@@ -72,19 +100,19 @@ pub fn create_commit_transaction(
     };
     let mut hash = SighashCache::new(&tx);
     let signature_hash = hash.p2wpkh_signature_hash(
-        input_index as usize, // TODO: in the example is zero???
+        args.input_index as usize, // TODO: in the example is zero???
         &txin_script_pubkey,
         Amount::ZERO,
         bitcoin::EcdsaSighashType::All,
     )?;
 
     let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
-    let signature = secp256k1::Secp256k1::new().sign_ecdsa(&message, &private_key.inner);
+    let signature = secp256k1::Secp256k1::new().sign_ecdsa(&message, &args.private_key.inner);
 
     // Append script signature to tx input
-    append_signature_to_input(private_key, &mut tx, signature)?;
+    append_signature_to_input(&args.private_key, &mut tx, signature)?;
 
-    Ok(tx)
+    Ok(CreateCommitTransaction { tx, redeem_script })
 }
 
 /// Append signature to tx input
@@ -116,8 +144,8 @@ fn generate_pw2sh_address(
     private_key: &PrivateKey,
     inscription: &Brc20Op,
     network: Network,
+    redeem_script: &ScriptBuf,
 ) -> Brc20Result<Address> {
-    let redeem_script = generate_redeem_script(private_key, inscription)?;
     let p2wsh_script = ScriptBuilder::new()
         .push_opcode(OP_0)
         .push_slice(bytes_to_push_bytes(&sha256sum(redeem_script.as_bytes()))?.as_push_bytes())
