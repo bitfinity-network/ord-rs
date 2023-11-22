@@ -1,5 +1,5 @@
 [package]
-name = "brc-20"
+name = "brc20"
 categories = ["cryptography::cryptocurrencies"]
 license = "MIT"
 version = "0.1.0"
@@ -9,7 +9,7 @@ repository = "https://github.com/bitfinity-network/brc-20-rs"
 documentation = "https://docs.rs/brc-20"
 
 [lib]
-name = "brc_20"
+name = "brc20"
 path = "src/lib.rs"
 
 [dependencies]
