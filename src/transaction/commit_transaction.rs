@@ -13,13 +13,10 @@ use super::POSTAGE;
 use crate::utils::{bytes_to_push_bytes, h160sum, sha256sum};
 use crate::{Brc20Op, Brc20Result};
 
-const REDEEM_SCRIPT_FIXED_LEN: usize = 1 + 1 + 1 + 1 + 1 + 1 + 3 + 16;
 const JSON_CONTENT_TYPE: &str = "application/json";
 
 /// Arguments for creating a commit transaction
 pub struct CreateCommitTransactionArgs {
-    /// Private key of the sender
-    pub private_key: PrivateKey,
     /// Transaction id of the input
     pub input_tx: Txid,
     /// Index of the input in the transaction
@@ -46,6 +43,7 @@ pub struct CreateCommitTransaction {
 }
 
 pub fn create_commit_transaction(
+    private_key: &PrivateKey,
     args: CreateCommitTransactionArgs,
 ) -> Brc20Result<CreateCommitTransaction> {
     // previous output
@@ -54,16 +52,11 @@ pub fn create_commit_transaction(
         vout: args.input_index,
     };
     // get txin script pubkey
-    let txin_script_pubkey = generate_txin_script_pubkey(&args.private_key)?;
+    let txin_script_pubkey = generate_txin_script_pubkey(private_key)?;
 
     // get p2wsh address for output of inscription
-    let redeem_script = generate_redeem_script(&args.private_key, &args.inscription)?;
-    let p2wsh_address = generate_pw2sh_address(
-        &args.private_key,
-        &args.inscription,
-        args.network,
-        &redeem_script,
-    )?;
+    let redeem_script = generate_redeem_script(private_key, &args.inscription)?;
+    let p2wsh_address = generate_pw2sh_address(args.network, &redeem_script)?;
 
     // exceeding amount of transaction to send to leftovers recipient
     let leftover_amount = args.input_balance_msat - POSTAGE - args.commit_fee - args.reveal_fee;
@@ -94,23 +87,13 @@ pub fn create_commit_transaction(
         input: tx_in,
         output: tx_out,
     };
-    sign_transaction(
-        &mut tx,
-        &args.private_key,
-        args.input_index,
-        &txin_script_pubkey,
-    )?;
+    sign_transaction(&mut tx, private_key, args.input_index, &txin_script_pubkey)?;
 
     Ok(CreateCommitTransaction { tx, redeem_script })
 }
 
 /// Generate redeem script and then get a pw2sh address to send the commit transaction
-fn generate_pw2sh_address(
-    private_key: &PrivateKey,
-    inscription: &Brc20Op,
-    network: Network,
-    redeem_script: &ScriptBuf,
-) -> Brc20Result<Address> {
+fn generate_pw2sh_address(network: Network, redeem_script: &ScriptBuf) -> Brc20Result<Address> {
     let p2wsh_script = ScriptBuilder::new()
         .push_opcode(OP_0)
         .push_slice(bytes_to_push_bytes(&sha256sum(redeem_script.as_bytes()))?.as_push_bytes())

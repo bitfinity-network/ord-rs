@@ -11,8 +11,6 @@ use crate::Brc20Result;
 
 /// Arguments for creating a reveal transaction
 pub struct RevealTransactionArgs {
-    /// Private key of the sender
-    pub private_key: PrivateKey,
     /// Transaction id of the input
     pub input_tx: Txid,
     /// Index of the input in the transaction
@@ -26,7 +24,10 @@ pub struct RevealTransactionArgs {
 }
 
 /// Create the reveal transaction
-pub fn create_reveal_transaction(args: RevealTransactionArgs) -> Brc20Result<Transaction> {
+pub fn create_reveal_transaction(
+    private_key: &PrivateKey,
+    args: RevealTransactionArgs,
+) -> Brc20Result<Transaction> {
     // previous output
     let previous_output = OutPoint {
         txid: args.input_tx,
@@ -52,12 +53,7 @@ pub fn create_reveal_transaction(args: RevealTransactionArgs) -> Brc20Result<Tra
         input: tx_in,
         output: tx_out,
     };
-    sign_transaction(
-        &mut tx,
-        &args.private_key,
-        args.input_index,
-        &args.redeem_script,
-    )?;
+    sign_transaction(&mut tx, private_key, args.input_index, &args.redeem_script)?;
 
     Ok(tx)
 }
