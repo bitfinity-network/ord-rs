@@ -5,8 +5,8 @@ license = "MIT"
 version = "0.1.0"
 authors = ["Finity Technologies"]
 description = "A library for working with BRC-20 tokens."
-repository = "https://github.com/bitfinity-network/brc-20-rs"
-documentation = "https://docs.rs/brc-20"
+repository = "https://github.com/bitfinity-network/brc20-rs"
+documentation = "https://docs.rs/brc20"
 edition = "2021"
 
 [lib]
