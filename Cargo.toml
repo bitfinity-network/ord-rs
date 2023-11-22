@@ -22,3 +22,6 @@ serde_with = "^3"
 thiserror = "^1"
 
 [dev-dependencies]
+bip39 = "^2"
+hex-literal = "^0.4"
+rand = { version = "0.8" }

@@ -8,13 +8,15 @@ pub fn sha256sum(bytes: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod test {
 
+    use hex_literal::hex;
+
     use super::*;
 
     #[test]
     fn test_should_compute_sha256sum() {
         assert_eq!(
-            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9".as_bytes(),
-            sha256sum("hello world".as_bytes())
+            hex!("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"),
+            sha256sum("hello world".as_bytes()).as_ref()
         );
     }
 }
