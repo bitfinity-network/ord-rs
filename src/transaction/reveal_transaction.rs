@@ -42,7 +42,7 @@ pub fn create_reveal_transaction(
     let tx_in = vec![TxIn {
         previous_output,
         script_sig: ScriptBuf::new(),
-        sequence: Sequence::from_consensus(0xffffffff), // TODO: what is this?
+        sequence: Sequence::from_consensus(0xffffffff),
         witness: Witness::new(),
     }];
 
