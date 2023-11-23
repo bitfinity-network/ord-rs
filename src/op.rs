@@ -4,7 +4,7 @@ use serde_with::{serde_as, DisplayFromStr};
 
 use crate::{Brc20Error, Brc20Result};
 
-const PROTOCOL: &str = "p";
+const PROTOCOL: &str = "brc-20";
 
 /// BRC-20 operation
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

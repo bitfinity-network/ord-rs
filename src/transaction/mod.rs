@@ -50,11 +50,77 @@ mod test {
 
     use std::str::FromStr;
 
-    use bitcoin::{Amount, Network, Txid};
+    use bitcoin::secp256k1::Secp256k1;
+    use bitcoin::{Address, Amount, Network, Sequence, Txid};
+    use hex_literal::hex;
 
     use super::*;
     use crate::utils::test_utils::generate_btc_address;
     use crate::Brc20Op;
+
+    const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
+
+    #[test]
+    fn test_should_build_deploy_transactions_from_existing_data() {
+        // this test refers to this testnet transaction:
+        // <https://mempool.space/testnet/tx/https://mempool.space/testnet/tx/a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883>
+        // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
+        let private_key = PrivateKey::from_wif(WIF).unwrap();
+        let public_key = private_key.public_key(&Secp256k1::new());
+        let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
+
+        let builder = Brc20TransactionBuilder::new(private_key);
+
+        let commit_transaction_args = CreateCommitTransactionArgs {
+            input_tx: Txid::from_str(
+                "a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883",
+            )
+            .unwrap(), // the transaction that funded our walle
+            input_index: 0, // the index of the input that funds the transaction
+            input_balance_msat: 8_000,
+            inscription: Brc20Op::deploy("mona".to_string(), 21_000_000, Some(1_000), None),
+            leftovers_recipient: address.clone(),
+            commit_fee: 2307,
+            reveal_fee: 4667,
+        };
+        let tx_result = builder
+            .build_commit_transaction(commit_transaction_args)
+            .unwrap();
+
+        println!("tx_result: {:?}", tx_result);
+
+        let witness = tx_result.tx.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 2);
+        for w in witness.to_vec() {
+            println!("{}", hex::encode(w));
+        }
+        // assert_eq!(witness[0], hex!("3045022100f351dbd93f0c58cbdd4475515c646324bf2ec04098727e39ee57ac8b6e39564b022059b8b88b6e159471efe9fb199cf7afeb4a8c8396c0c8f63208197b2d11c58ea401"));
+        assert_eq!(
+            witness[1],
+            hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
+        );
+
+        // txin
+        assert_eq!(tx_result.tx.input.len(), 1);
+        assert_eq!(
+            tx_result.tx.input[0].sequence,
+            Sequence::from_consensus(0xffffffff)
+        );
+        assert_eq!(
+            tx_result.tx.input[0].previous_output.txid,
+            Txid::from_str("a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883",)
+                .unwrap()
+        );
+
+        // txout
+        assert_eq!(tx_result.tx.output.len(), 2);
+        assert_eq!(tx_result.tx.output[0].value, Amount::from_sat(5_000));
+        assert_eq!(tx_result.tx.output[1].value, Amount::from_sat(693));
+
+        println!("{}", tx_result.redeem_script);
+
+        println!("\n\n\n\n\n\n");
+    }
 
     #[test]
     fn test_should_build_commit_transaction() {

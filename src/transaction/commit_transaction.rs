@@ -13,8 +13,6 @@ use super::POSTAGE;
 use crate::utils::{bytes_to_push_bytes, h160sum, sha256sum};
 use crate::{Brc20Op, Brc20Result};
 
-const JSON_CONTENT_TYPE: &str = "application/json";
-
 #[derive(Debug)]
 /// Arguments for creating a commit transaction
 pub struct CreateCommitTransactionArgs {
@@ -87,7 +85,16 @@ pub fn create_commit_transaction(
         input: tx_in,
         output: tx_out,
     };
-    sign_transaction(&mut tx, private_key, args.input_index, &txin_script_pubkey)?;
+    let signature = sign_transaction(&mut tx, private_key, args.input_index, &txin_script_pubkey)?;
+    // put witness
+    let mut witness = Witness::new();
+    witness.push_ecdsa_signature(&bitcoin::ecdsa::Signature::sighash_all(signature));
+    witness.push(
+        private_key
+            .public_key(&secp256k1::Secp256k1::new())
+            .to_bytes(),
+    );
+    tx.input[0].witness = witness;
 
     Ok(CreateCommitTransaction { tx, redeem_script })
 }
@@ -98,6 +105,7 @@ fn generate_pw2sh_address(network: Network, redeem_script: &ScriptBuf) -> Brc20R
         .push_opcode(OP_0)
         .push_slice(bytes_to_push_bytes(&sha256sum(redeem_script.as_bytes()))?.as_push_bytes())
         .into_script();
+
     // get p2wsh address
     Ok(Address::p2wsh(&p2wsh_script, network))
 }
@@ -107,21 +115,16 @@ fn generate_redeem_script(
     private_key: &PrivateKey,
     inscription: &Brc20Op,
 ) -> Brc20Result<ScriptBuf> {
-    let public_key = bytes_to_push_bytes(
-        &private_key
-            .public_key(&secp256k1::Secp256k1::new())
-            .to_bytes(),
-    )?;
     let encoded_inscription = bytes_to_push_bytes(inscription.encode()?.as_bytes())?;
 
     Ok(ScriptBuilder::new()
-        .push_slice(public_key.as_push_bytes())
+        .push_key(&private_key.public_key(&secp256k1::Secp256k1::new()))
         .push_opcode(OP_CHECKSIG)
         .push_opcode(OP_FALSE)
         .push_opcode(OP_IF)
         .push_slice(b"ord")
-        .push_int(0x01)
-        .push_slice(bytes_to_push_bytes(JSON_CONTENT_TYPE.as_bytes())?.as_push_bytes())
+        .push_slice(bytes_to_push_bytes(&[0x01])?.as_push_bytes())
+        .push_slice(b"text/plain;charset=utf-8") // NOTE: YES, IT'S CORRECT, DON'T ASK!!! It's not json for some reasons
         .push_opcode(OP_0)
         .push_slice(encoded_inscription.as_push_bytes())
         .push_opcode(OP_ENDIF)
