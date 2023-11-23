@@ -91,9 +91,9 @@ mod test {
 
         let witness = tx_result.tx.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 2);
-        for w in witness.to_vec() {
-            println!("{}", hex::encode(w));
-        }
+        //for w in witness.to_vec() {
+        //    println!("{}", hex::encode(w));
+        //}
         // assert_eq!(witness[0], hex!("3045022100f351dbd93f0c58cbdd4475515c646324bf2ec04098727e39ee57ac8b6e39564b022059b8b88b6e159471efe9fb199cf7afeb4a8c8396c0c8f63208197b2d11c58ea401"));
         assert_eq!(
             witness[1],
