@@ -15,6 +15,7 @@ use crate::{Brc20Op, Brc20Result};
 
 const JSON_CONTENT_TYPE: &str = "application/json";
 
+#[derive(Debug)]
 /// Arguments for creating a commit transaction
 pub struct CreateCommitTransactionArgs {
     /// Transaction id of the input
@@ -31,10 +32,9 @@ pub struct CreateCommitTransactionArgs {
     pub commit_fee: u64,
     /// Fee to pay for the reveal transaction
     pub reveal_fee: u64,
-    /// Network to use
-    pub network: Network,
 }
 
+#[derive(Debug, Clone)]
 pub struct CreateCommitTransaction {
     /// The transaction to be broadcasted
     pub tx: Transaction,
@@ -56,7 +56,7 @@ pub fn create_commit_transaction(
 
     // get p2wsh address for output of inscription
     let redeem_script = generate_redeem_script(private_key, &args.inscription)?;
-    let p2wsh_address = generate_pw2sh_address(args.network, &redeem_script)?;
+    let p2wsh_address = generate_pw2sh_address(private_key.network, &redeem_script)?;
 
     // exceeding amount of transaction to send to leftovers recipient
     let leftover_amount = args.input_balance_msat - POSTAGE - args.commit_fee - args.reveal_fee;
@@ -76,7 +76,7 @@ pub fn create_commit_transaction(
     let tx_in = vec![TxIn {
         previous_output,
         script_sig: ScriptBuf::new(),
-        sequence: Sequence::from_consensus(0xffffffff), // TODO: what is this?
+        sequence: Sequence::from_consensus(0xffffffff),
         witness: Witness::new(),
     }];
 

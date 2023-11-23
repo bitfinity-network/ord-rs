@@ -24,6 +24,7 @@ mod utils;
 
 pub mod transaction;
 
+pub use bitcoin;
 pub use error::Brc20Error;
 pub use op::{Brc20Deploy, Brc20Mint, Brc20Op, Brc20Transfer};
 pub use result::Brc20Result;

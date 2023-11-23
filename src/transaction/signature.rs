@@ -15,11 +15,13 @@ pub fn sign_transaction(
     input_index: u32,
     txin_script: &ScriptBuf,
 ) -> Brc20Result<()> {
+    let value = Amount::from_sat(tx.output.iter().map(|x| x.value.to_sat()).sum::<u64>());
+
     let mut hash = SighashCache::new(tx.clone());
-    let signature_hash = hash.p2wpkh_signature_hash(
+    let signature_hash = hash.p2wsh_signature_hash(
         input_index as usize, // TODO: in the example is zero???
         txin_script,
-        Amount::ZERO,
+        value,
         bitcoin::EcdsaSighashType::All,
     )?;
 
