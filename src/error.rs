@@ -11,4 +11,6 @@ pub enum Brc20Error {
     PushBytes(#[from] bitcoin::script::PushBytesError),
     #[error("bad transaction input: {0}")]
     InputNotFound(usize),
+    #[error("insufficient balance")]
+    InsufficientBalance,
 }

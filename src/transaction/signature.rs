@@ -1,9 +1,10 @@
 use bitcoin::script::Builder as ScriptBuilder;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::sighash::SighashCache;
-use bitcoin::{secp256k1, Amount, PrivateKey, ScriptBuf, Transaction, Txid, Witness};
+use bitcoin::{secp256k1, PrivateKey, ScriptBuf, Transaction, Witness};
 use bitcoin_hashes::Hash;
 
+use super::TxInput;
 use crate::utils::bytes_to_push_bytes;
 use crate::Brc20Result;
 
@@ -11,17 +12,15 @@ use crate::Brc20Result;
 pub fn sign_transaction(
     tx: &mut Transaction,
     private_key: &PrivateKey,
-    inputs: &[(Txid, u32)],
+    inputs: &[TxInput],
     txin_script: &ScriptBuf,
 ) -> Brc20Result<()> {
-    let value = Amount::from_sat(tx.output.iter().map(|x| x.value.to_sat()).sum::<u64>());
-
-    for (index, input_index) in inputs.iter().map(|(_id, index)| index).enumerate() {
+    for (index, input) in inputs.iter().enumerate() {
         let mut hash = SighashCache::new(tx.clone());
         let signature_hash = hash.p2wsh_signature_hash(
-            *input_index as usize,
+            index as usize,
             txin_script,
-            value,
+            input.amount,
             bitcoin::EcdsaSighashType::All,
         )?;
 

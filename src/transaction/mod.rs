@@ -4,7 +4,7 @@ mod commit_transaction;
 mod reveal_transaction;
 mod signature;
 
-use bitcoin::{PrivateKey, Transaction};
+use bitcoin::{Amount, PrivateKey, Transaction, Txid};
 use commit_transaction::create_commit_transaction;
 pub use commit_transaction::{CreateCommitTransaction, CreateCommitTransactionArgs};
 use reveal_transaction::create_reveal_transaction;
@@ -45,6 +45,13 @@ impl From<PrivateKey> for Brc20TransactionBuilder {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct TxInput {
+    pub id: Txid,
+    pub index: u32,
+    pub amount: Amount,
+}
+
 #[cfg(test)]
 mod test {
 
@@ -72,12 +79,14 @@ mod test {
         let builder = Brc20TransactionBuilder::new(private_key);
 
         let commit_transaction_args = CreateCommitTransactionArgs {
-            inputs: vec![(
-                Txid::from_str("a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883")
-                    .unwrap(), // the transaction that funded our walle
-                0,
-            )], // the index of the input that funds the transaction
-            input_balance_msat: 8_000,
+            inputs: vec![TxInput {
+                id: Txid::from_str(
+                    "a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883",
+                )
+                .unwrap(), // the transaction that funded our walle
+                index: 0,
+                amount: Amount::from_sat(8_000),
+            }],
             inscription: Brc20Op::deploy("mona".to_string(), 21_000_000, Some(1_000), None),
             leftovers_recipient: address.clone(),
             commit_fee: 2307,
@@ -132,14 +141,14 @@ mod test {
 
         let commit_tx = builder
             .build_commit_transaction(CreateCommitTransactionArgs {
-                inputs: vec![(
-                    Txid::from_str(
+                inputs: vec![TxInput {
+                    id: Txid::from_str(
                         "5b3cf3573442df94895dfdef2509a6bc38c245bb9c403c9879933bb4c47452b1",
                     )
                     .unwrap(),
-                    0,
-                )],
-                input_balance_msat: 100_000,
+                    index: 0,
+                    amount: Amount::from_sat(100_000),
+                }],
                 inscription: Brc20Op::deploy("ordi".to_string(), 21_000_000, Some(100_000), None),
                 leftovers_recipient: address.clone(),
                 commit_fee: 15_000,
@@ -149,12 +158,14 @@ mod test {
 
         let reveal_tx = builder
             .build_reveal_transaction(RevealTransactionArgs {
-                input_tx: Txid::from_str(
-                    "afe019fb1556e7eb1626ba85fa92fb90b2ee9769f6d01647454bc389d4431b6f",
-                )
-                .unwrap(),
-                input_index: 0,
-                input_balance_sats: reveal_fee + POSTAGE,
+                input: TxInput {
+                    id: Txid::from_str(
+                        "afe019fb1556e7eb1626ba85fa92fb90b2ee9769f6d01647454bc389d4431b6f",
+                    )
+                    .unwrap(),
+                    index: 0,
+                    amount: commit_tx.reveal_balance,
+                },
                 recipient_address: address,
                 redeem_script: commit_tx.redeem_script.clone(),
             })

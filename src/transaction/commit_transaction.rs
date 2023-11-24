@@ -5,21 +5,19 @@ use bitcoin::script::Builder as ScriptBuilder;
 use bitcoin::transaction::Version;
 use bitcoin::{
     secp256k1, Address, Amount, Network, OutPoint, PrivateKey, ScriptBuf, Sequence, Transaction,
-    TxIn, TxOut, Txid, Witness,
+    TxIn, TxOut, Witness,
 };
 
 use super::signature::sign_transaction;
-use super::POSTAGE;
+use super::{TxInput, POSTAGE};
 use crate::utils::{bytes_to_push_bytes, h160sum, sha256sum};
-use crate::{Brc20Op, Brc20Result};
+use crate::{Brc20Error, Brc20Op, Brc20Result};
 
 #[derive(Debug)]
 /// Arguments for creating a commit transaction
 pub struct CreateCommitTransactionArgs {
     /// Inputs of the transaction
-    pub inputs: Vec<(Txid, u32)>,
-    /// Balance of the input in msat, 100k should be enough
-    pub input_balance_msat: u64,
+    pub inputs: Vec<TxInput>,
     /// Inscription to write
     pub inscription: Brc20Op,
     /// Address to send the leftovers BTC of the trasnsaction
@@ -36,6 +34,8 @@ pub struct CreateCommitTransaction {
     pub tx: Transaction,
     /// The redeem script to be used in the reveal transaction
     pub redeem_script: ScriptBuf,
+    /// Balance to be passed to reveal transaction
+    pub reveal_balance: Amount,
 }
 
 pub fn create_commit_transaction(
@@ -50,11 +50,20 @@ pub fn create_commit_transaction(
     let p2wsh_address = generate_pw2sh_address(private_key.network, &redeem_script)?;
 
     // exceeding amount of transaction to send to leftovers recipient
-    let leftover_amount = args.input_balance_msat - POSTAGE - args.commit_fee - args.reveal_fee;
+    let leftover_amount = args
+        .inputs
+        .iter()
+        .map(|input| input.amount.to_sat())
+        .sum::<u64>()
+        .checked_sub(POSTAGE)
+        .and_then(|v| v.checked_sub(args.commit_fee))
+        .and_then(|v| v.checked_sub(args.reveal_fee))
+        .ok_or(Brc20Error::InsufficientBalance)?;
     // get tx_out
+    let reveal_balance = POSTAGE + args.reveal_fee;
     let tx_out = vec![
         TxOut {
-            value: Amount::from_sat(POSTAGE + args.reveal_fee),
+            value: Amount::from_sat(reveal_balance),
             script_pubkey: p2wsh_address.script_pubkey(),
         },
         TxOut {
@@ -67,10 +76,10 @@ pub fn create_commit_transaction(
     let tx_in = args
         .inputs
         .iter()
-        .map(|(tx_id, vout)| TxIn {
+        .map(|input| TxIn {
             previous_output: OutPoint {
-                txid: *tx_id,
-                vout: *vout,
+                txid: input.id,
+                vout: input.index,
             },
             script_sig: txin_script_pubkey.clone(),
             sequence: Sequence::from_consensus(0xffffffff),
@@ -89,7 +98,11 @@ pub fn create_commit_transaction(
     // sign transaction and update witness
     sign_transaction(&mut tx, private_key, &args.inputs, &txin_script_pubkey)?;
 
-    Ok(CreateCommitTransaction { tx, redeem_script })
+    Ok(CreateCommitTransaction {
+        tx,
+        redeem_script,
+        reveal_balance: Amount::from_sat(reveal_balance),
+    })
 }
 
 /// Generate redeem script and then get a pw2sh address to send the commit transaction

@@ -1,22 +1,17 @@
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::Version;
 use bitcoin::{
-    Address, Amount, OutPoint, PrivateKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid,
-    Witness,
+    Address, Amount, OutPoint, PrivateKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 
 use super::signature::sign_transaction;
-use super::POSTAGE;
+use super::{TxInput, POSTAGE};
 use crate::Brc20Result;
 
 /// Arguments for creating a reveal transaction
 pub struct RevealTransactionArgs {
     /// Transaction id of the input
-    pub input_tx: Txid,
-    /// Index of the input in the transaction
-    pub input_index: u32,
-    /// Balance of the input in sats
-    pub input_balance_sats: u64,
+    pub input: TxInput,
     /// Recipient address of the inscription, only support P2PKH
     pub recipient_address: Address,
     /// The redeem script returned by `create_commit_transaction`
@@ -30,8 +25,8 @@ pub fn create_reveal_transaction(
 ) -> Brc20Result<Transaction> {
     // previous output
     let previous_output = OutPoint {
-        txid: args.input_tx,
-        vout: args.input_index,
+        txid: args.input.id,
+        vout: args.input.index,
     };
     // tx out
     let tx_out = vec![TxOut {
@@ -53,12 +48,7 @@ pub fn create_reveal_transaction(
         input: tx_in,
         output: tx_out,
     };
-    sign_transaction(
-        &mut tx,
-        private_key,
-        &[(args.input_tx, args.input_index)],
-        &args.redeem_script,
-    )?;
+    sign_transaction(&mut tx, private_key, &[args.input], &args.redeem_script)?;
 
     Ok(tx)
 }
