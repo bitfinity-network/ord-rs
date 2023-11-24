@@ -16,10 +16,8 @@ use crate::{Brc20Op, Brc20Result};
 #[derive(Debug)]
 /// Arguments for creating a commit transaction
 pub struct CreateCommitTransactionArgs {
-    /// Transaction id of the input
-    pub input_tx: Txid,
-    /// Index of the input in the transaction
-    pub input_index: u32,
+    /// Inputs of the transaction
+    pub inputs: Vec<(Txid, u32)>,
     /// Balance of the input in msat, 100k should be enough
     pub input_balance_msat: u64,
     /// Inscription to write
@@ -44,11 +42,6 @@ pub fn create_commit_transaction(
     private_key: &PrivateKey,
     args: CreateCommitTransactionArgs,
 ) -> Brc20Result<CreateCommitTransaction> {
-    // previous output
-    let previous_output = OutPoint {
-        txid: args.input_tx,
-        vout: args.input_index,
-    };
     // get txin script pubkey
     let txin_script_pubkey = generate_txin_script_pubkey(private_key)?;
 
@@ -71,12 +64,19 @@ pub fn create_commit_transaction(
     ];
 
     // txin
-    let tx_in = vec![TxIn {
-        previous_output,
-        script_sig: ScriptBuf::new(),
-        sequence: Sequence::from_consensus(0xffffffff),
-        witness: Witness::new(),
-    }];
+    let tx_in = args
+        .inputs
+        .iter()
+        .map(|(tx_id, vout)| TxIn {
+            previous_output: OutPoint {
+                txid: *tx_id,
+                vout: *vout,
+            },
+            script_sig: txin_script_pubkey.clone(),
+            sequence: Sequence::from_consensus(0xffffffff),
+            witness: Witness::new(),
+        })
+        .collect();
 
     // make transaction and sign it
     let mut tx = Transaction {
@@ -85,16 +85,9 @@ pub fn create_commit_transaction(
         input: tx_in,
         output: tx_out,
     };
-    let signature = sign_transaction(&mut tx, private_key, args.input_index, &txin_script_pubkey)?;
-    // put witness
-    let mut witness = Witness::new();
-    witness.push_ecdsa_signature(&bitcoin::ecdsa::Signature::sighash_all(signature));
-    witness.push(
-        private_key
-            .public_key(&secp256k1::Secp256k1::new())
-            .to_bytes(),
-    );
-    tx.input[0].witness = witness;
+
+    // sign transaction and update witness
+    sign_transaction(&mut tx, private_key, &args.inputs, &txin_script_pubkey)?;
 
     Ok(CreateCommitTransaction { tx, redeem_script })
 }

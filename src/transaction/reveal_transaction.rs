@@ -53,7 +53,12 @@ pub fn create_reveal_transaction(
         input: tx_in,
         output: tx_out,
     };
-    sign_transaction(&mut tx, private_key, args.input_index, &args.redeem_script)?;
+    sign_transaction(
+        &mut tx,
+        private_key,
+        &[(args.input_tx, args.input_index)],
+        &args.redeem_script,
+    )?;
 
     Ok(tx)
 }

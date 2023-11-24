@@ -18,6 +18,8 @@ serde_with = { version = "3", default-features = false, features = ["macros"] }
 thiserror = "1"
 
 [dev-dependencies]
+anyhow = "1"
+argh = "0.1"
 bip39 = "2"
 hex-literal = "0.4"
 rand = { version = "0.8" }
@@ -25,3 +27,7 @@ rand = { version = "0.8" }
 [[example]]
 name = "generate-address"
 path = "examples/generate_address.rs"
+
+[[example]]
+name = "transfer"
+path = "examples/transfer.rs"

@@ -9,4 +9,6 @@ pub enum Brc20Error {
     BitcoinSigHash(#[from] bitcoin::sighash::Error),
     #[error("Bitcoin script error: {0}")]
     PushBytes(#[from] bitcoin::script::PushBytesError),
+    #[error("bad transaction input: {0}")]
+    InputNotFound(usize),
 }

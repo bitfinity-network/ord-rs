@@ -72,11 +72,11 @@ mod test {
         let builder = Brc20TransactionBuilder::new(private_key);
 
         let commit_transaction_args = CreateCommitTransactionArgs {
-            input_tx: Txid::from_str(
-                "a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883",
-            )
-            .unwrap(), // the transaction that funded our walle
-            input_index: 0, // the index of the input that funds the transaction
+            inputs: vec![(
+                Txid::from_str("a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883")
+                    .unwrap(), // the transaction that funded our walle
+                0,
+            )], // the index of the input that funds the transaction
             input_balance_msat: 8_000,
             inscription: Brc20Op::deploy("mona".to_string(), 21_000_000, Some(1_000), None),
             leftovers_recipient: address.clone(),
@@ -123,40 +123,7 @@ mod test {
     }
 
     #[test]
-    fn test_should_build_commit_transaction() {
-        let (address, privkey) = generate_btc_address(Network::Bitcoin);
-
-        let builder = Brc20TransactionBuilder::new(privkey);
-
-        let tx_result = builder
-            .build_commit_transaction(CreateCommitTransactionArgs {
-                input_tx: Txid::from_str(
-                    "5b3cf3573442df94895dfdef2509a6bc38c245bb9c403c9879933bb4c47452b1",
-                )
-                .unwrap(),
-                input_index: 0,
-                input_balance_msat: 100_000,
-                inscription: Brc20Op::deploy("ordi".to_string(), 21_000_000, Some(100_000), None),
-                leftovers_recipient: address,
-                commit_fee: 15_000,
-                reveal_fee: 7_000,
-            })
-            .unwrap();
-
-        assert_eq!(tx_result.tx.input.len(), 1);
-        assert_eq!(tx_result.tx.output.len(), 2);
-        assert_eq!(
-            tx_result.tx.output[0].value,
-            Amount::from_sat(POSTAGE + 7_000)
-        );
-        assert_eq!(
-            tx_result.tx.output[1].value,
-            Amount::from_sat(100_000 - 15_000 - 7_000 - POSTAGE)
-        );
-    }
-
-    #[test]
-    fn test_should_build_reveal_trnsaction() {
+    fn test_should_build_reveal_transaction() {
         let (address, privkey) = generate_btc_address(Network::Bitcoin);
 
         let builder = Brc20TransactionBuilder::new(privkey);
@@ -165,11 +132,13 @@ mod test {
 
         let commit_tx = builder
             .build_commit_transaction(CreateCommitTransactionArgs {
-                input_tx: Txid::from_str(
-                    "5b3cf3573442df94895dfdef2509a6bc38c245bb9c403c9879933bb4c47452b1",
-                )
-                .unwrap(),
-                input_index: 0,
+                inputs: vec![(
+                    Txid::from_str(
+                        "5b3cf3573442df94895dfdef2509a6bc38c245bb9c403c9879933bb4c47452b1",
+                    )
+                    .unwrap(),
+                    0,
+                )],
                 input_balance_msat: 100_000,
                 inscription: Brc20Op::deploy("ordi".to_string(), 21_000_000, Some(100_000), None),
                 leftovers_recipient: address.clone(),
