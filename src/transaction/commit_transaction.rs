@@ -81,7 +81,7 @@ pub fn create_commit_transaction(
                 txid: input.id,
                 vout: input.index,
             },
-            script_sig: txin_script_pubkey.clone(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence::from_consensus(0xffffffff),
             witness: Witness::new(),
         })
