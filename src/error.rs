@@ -13,4 +13,8 @@ pub enum Brc20Error {
     InputNotFound(usize),
     #[error("insufficient balance")]
     InsufficientBalance,
+    #[error("invalid signature: {0}")]
+    Signature(#[from] bitcoin::secp256k1::Error),
+    #[error("no transaction inputs")]
+    NoInputs,
 }

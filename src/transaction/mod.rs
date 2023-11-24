@@ -1,25 +1,71 @@
 const POSTAGE: u64 = 333;
 
-mod commit_transaction;
-mod reveal_transaction;
-mod signature;
+use bitcoin::absolute::LockTime;
+use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
+use bitcoin::opcodes::{OP_0, OP_FALSE};
+use bitcoin::script::Builder as ScriptBuilder;
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::sighash::SighashCache;
+use bitcoin::transaction::Version;
+use bitcoin::{
+    secp256k1, Address, Amount, OutPoint, PrivateKey, PublicKey, ScriptBuf, Sequence, Transaction,
+    TxIn, TxOut, Txid, Witness,
+};
+use bitcoin_hashes::Hash;
 
-use bitcoin::{Amount, PrivateKey, Transaction, Txid};
-use commit_transaction::create_commit_transaction;
-pub use commit_transaction::{CreateCommitTransaction, CreateCommitTransactionArgs};
-use reveal_transaction::create_reveal_transaction;
-pub use reveal_transaction::RevealTransactionArgs;
-
-use crate::Brc20Result;
+use crate::utils::{bytes_to_push_bytes, sha256sum};
+use crate::{Brc20Error, Brc20Op, Brc20Result};
 
 /// Builder for BRC20 transactions
 pub struct Brc20TransactionBuilder {
     private_key: PrivateKey,
+    public_key: PublicKey,
+}
+
+#[derive(Debug)]
+/// Arguments for creating a commit transaction
+pub struct CreateCommitTransactionArgs {
+    /// Inputs of the transaction
+    pub inputs: Vec<TxInput>,
+    /// Inscription to write
+    pub inscription: Brc20Op,
+    /// Address to send the leftovers BTC of the trasnsaction
+    pub leftovers_recipient: Address,
+    /// Fee to pay for the commit transaction
+    pub commit_fee: u64,
+    /// Fee to pay for the reveal transaction
+    pub reveal_fee: u64,
+    /// Script pubkey of the inputs
+    pub txin_script_pubkey: ScriptBuf,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateCommitTransaction {
+    /// The transaction to be broadcasted
+    pub tx: Transaction,
+    /// The redeem script to be used in the reveal transaction
+    pub redeem_script: ScriptBuf,
+    /// Balance to be passed to reveal transaction
+    pub reveal_balance: Amount,
+}
+
+/// Arguments for creating a reveal transaction
+pub struct RevealTransactionArgs {
+    /// Transaction input (output of commit transaction)
+    pub input: TxInput,
+    /// Recipient address of the inscription, only support P2PKH
+    pub recipient_address: Address,
+    /// The redeem script returned by `create_commit_transaction`
+    pub redeem_script: ScriptBuf,
 }
 
 impl Brc20TransactionBuilder {
     pub fn new(private_key: PrivateKey) -> Self {
-        Self { private_key }
+        let public_key = private_key.public_key(&bitcoin::secp256k1::Secp256k1::new());
+        Self {
+            private_key,
+            public_key,
+        }
     }
 
     /// Create the commit transaction
@@ -27,7 +73,181 @@ impl Brc20TransactionBuilder {
         &self,
         args: CreateCommitTransactionArgs,
     ) -> Brc20Result<CreateCommitTransaction> {
-        create_commit_transaction(&self.private_key, args)
+        // get p2wsh address for output of inscription
+        let redeem_script = self.generate_redeem_script(&args.inscription)?;
+        let p2wsh_address = self.generate_pw2sh_address(&redeem_script)?;
+
+        // exceeding amount of transaction to send to leftovers recipient
+        let leftover_amount = args
+            .inputs
+            .iter()
+            .map(|input| input.amount.to_sat())
+            .sum::<u64>()
+            .checked_sub(POSTAGE)
+            .and_then(|v| v.checked_sub(args.commit_fee))
+            .and_then(|v| v.checked_sub(args.reveal_fee))
+            .ok_or(Brc20Error::InsufficientBalance)?;
+
+        let reveal_balance = POSTAGE + args.reveal_fee;
+
+        let tx_out = vec![
+            TxOut {
+                value: Amount::from_sat(reveal_balance),
+                script_pubkey: p2wsh_address.script_pubkey(),
+            },
+            TxOut {
+                value: Amount::from_sat(leftover_amount),
+                script_pubkey: args.txin_script_pubkey.clone(),
+            },
+        ];
+
+        // txin
+        let tx_in = args
+            .inputs
+            .iter()
+            .map(|input| TxIn {
+                previous_output: OutPoint {
+                    txid: input.id,
+                    vout: input.index,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::from_consensus(0xffffffff),
+                witness: Witness::new(),
+            })
+            .collect();
+
+        // make transaction and sign it
+        let mut tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: tx_in,
+            output: tx_out,
+        };
+
+        // sign transaction and update witness
+        self.sign_transaction_p2wpkh(&mut tx, &args.inputs, &args.txin_script_pubkey)?;
+
+        Ok(CreateCommitTransaction {
+            tx,
+            redeem_script,
+            reveal_balance: Amount::from_sat(reveal_balance),
+        })
+    }
+
+    /// Generate redeem script and then get a pw2sh address to send the commit transaction
+    fn generate_pw2sh_address(&self, redeem_script: &ScriptBuf) -> Brc20Result<Address> {
+        let p2wsh_script = ScriptBuilder::new()
+            .push_opcode(OP_0)
+            .push_slice(bytes_to_push_bytes(&sha256sum(redeem_script.as_bytes()))?.as_push_bytes())
+            .into_script();
+
+        // get p2wsh address
+        Ok(Address::p2wsh(&p2wsh_script, self.private_key.network))
+    }
+
+    /// Generate redeem script from private key and inscription
+    fn generate_redeem_script(&self, inscription: &Brc20Op) -> Brc20Result<ScriptBuf> {
+        let encoded_inscription = bytes_to_push_bytes(inscription.encode()?.as_bytes())?;
+
+        Ok(ScriptBuilder::new()
+            .push_key(&self.public_key)
+            .push_opcode(OP_CHECKSIG)
+            .push_opcode(OP_FALSE)
+            .push_opcode(OP_IF)
+            .push_slice(b"ord")
+            .push_slice(bytes_to_push_bytes(&[0x01])?.as_push_bytes())
+            .push_slice(b"text/plain;charset=utf-8") // NOTE: YES, IT'S CORRECT, DON'T ASK!!! It's not json for some reasons
+            .push_opcode(OP_0)
+            .push_slice(encoded_inscription.as_push_bytes())
+            .push_opcode(OP_ENDIF)
+            .into_script())
+    }
+
+    /// Sign transaction p2wpkh
+    fn sign_transaction_p2wpkh(
+        &self,
+        tx: &mut Transaction,
+        inputs: &[TxInput],
+        txin_script: &ScriptBuf,
+    ) -> Brc20Result<()> {
+        let ctx = secp256k1::Secp256k1::new();
+
+        let mut hash = SighashCache::new(tx.clone());
+        for (index, input) in inputs.iter().enumerate() {
+            let signature_hash = hash.p2wpkh_signature_hash(
+                index as usize,
+                txin_script,
+                input.amount,
+                bitcoin::EcdsaSighashType::All,
+            )?;
+
+            let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
+            let signature = ctx.sign_ecdsa(&message, &self.private_key.inner);
+
+            // verify signature
+            ctx.verify_ecdsa(
+                &message,
+                &signature,
+                &self.private_key.inner.public_key(&ctx),
+            )?;
+
+            // append witness
+            self.append_witness_to_input(tx, signature, index)?;
+        }
+
+        Ok(())
+    }
+
+    /// Sign transaction p2wsh
+    fn sign_transaction_p2wsh(
+        &self,
+        tx: &mut Transaction,
+        inputs: &[TxInput],
+        txin_script: &ScriptBuf,
+    ) -> Brc20Result<()> {
+        let ctx = secp256k1::Secp256k1::new();
+
+        let mut hash = SighashCache::new(tx.clone());
+        for (index, input) in inputs.iter().enumerate() {
+            let signature_hash = hash.p2wsh_signature_hash(
+                index as usize,
+                txin_script,
+                input.amount,
+                bitcoin::EcdsaSighashType::All,
+            )?;
+
+            let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
+            let signature = ctx.sign_ecdsa(&message, &self.private_key.inner);
+
+            // verify signature
+            ctx.verify_ecdsa(
+                &message,
+                &signature,
+                &self.private_key.inner.public_key(&ctx),
+            )?;
+
+            // append witness
+            self.append_witness_to_input(tx, signature, index)?;
+        }
+
+        Ok(())
+    }
+
+    fn append_witness_to_input(
+        &self,
+        tx: &mut Transaction,
+        signature: Signature,
+        index: usize,
+    ) -> Brc20Result<()> {
+        let mut witness = Witness::new();
+        witness.push_ecdsa_signature(&bitcoin::ecdsa::Signature::sighash_all(signature));
+        witness.push(self.public_key.to_bytes());
+        if let Some(input) = tx.input.get_mut(index) {
+            input.witness = witness;
+            Ok(())
+        } else {
+            Err(crate::Brc20Error::InputNotFound(index))
+        }
     }
 
     /// Create the reveal transaction
@@ -35,7 +255,34 @@ impl Brc20TransactionBuilder {
         &self,
         args: RevealTransactionArgs,
     ) -> Brc20Result<Transaction> {
-        create_reveal_transaction(&self.private_key, args)
+        // previous output
+        let previous_output = OutPoint {
+            txid: args.input.id,
+            vout: args.input.index,
+        };
+        // tx out
+        let tx_out = vec![TxOut {
+            value: Amount::from_sat(POSTAGE),
+            script_pubkey: args.recipient_address.script_pubkey(),
+        }];
+        // txin
+        let tx_in = vec![TxIn {
+            previous_output,
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::from_consensus(0xffffffff),
+            witness: Witness::new(),
+        }];
+
+        // make transaction and sign it
+        let mut tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: tx_in,
+            output: tx_out,
+        };
+        self.sign_transaction_p2wsh(&mut tx, &[args.input], &args.redeem_script)?;
+
+        Ok(tx)
     }
 }
 
@@ -87,6 +334,7 @@ mod test {
                 index: 0,
                 amount: Amount::from_sat(8_000),
             }],
+            txin_script_pubkey: address.script_pubkey(),
             inscription: Brc20Op::deploy("mona".to_string(), 21_000_000, Some(1_000), None),
             leftovers_recipient: address.clone(),
             commit_fee: 2307,
@@ -149,6 +397,7 @@ mod test {
                     index: 0,
                     amount: Amount::from_sat(100_000),
                 }],
+                txin_script_pubkey: address.script_pubkey(),
                 inscription: Brc20Op::deploy("ordi".to_string(), 21_000_000, Some(100_000), None),
                 leftovers_recipient: address.clone(),
                 commit_fee: 15_000,
