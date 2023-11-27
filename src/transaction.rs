@@ -1,4 +1,5 @@
 use bitcoin::absolute::LockTime;
+use bitcoin::hashes::Hash as _;
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
 use bitcoin::opcodes::{OP_0, OP_FALSE};
 use bitcoin::script::Builder as ScriptBuilder;
@@ -9,7 +10,6 @@ use bitcoin::{
     secp256k1, Address, Amount, OutPoint, PrivateKey, PublicKey, ScriptBuf, Sequence, Transaction,
     TxIn, TxOut, Txid, Witness,
 };
-use bitcoin_hashes::Hash;
 
 use crate::utils::bytes_to_push_bytes;
 use crate::{Brc20Error, Brc20Op, Brc20Result};
