@@ -1,5 +1,5 @@
 use bitcoin::absolute::LockTime;
-use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
+use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF, OP_RETURN};
 use bitcoin::opcodes::{OP_0, OP_FALSE};
 use bitcoin::script::Builder as ScriptBuilder;
 use bitcoin::secp256k1::ecdsa::Signature;
@@ -11,7 +11,7 @@ use bitcoin::{
 };
 use bitcoin_hashes::Hash;
 
-use crate::utils::{bytes_to_push_bytes, sha256sum};
+use crate::utils::bytes_to_push_bytes;
 use crate::{Brc20Error, Brc20Op, Brc20Result};
 
 const POSTAGE: u64 = 333;
@@ -186,13 +186,15 @@ impl Brc20TransactionBuilder {
 
     /// Generate redeem script and then get a pw2sh address to send the commit transaction
     fn generate_p2wsh_address(&self, redeem_script: &ScriptBuf) -> Brc20Result<Address> {
-        let p2wsh_script = ScriptBuilder::new()
-            .push_opcode(OP_0)
-            .push_slice(bytes_to_push_bytes(&sha256sum(redeem_script.as_bytes()))?.as_push_bytes())
-            .into_script();
+        //let p2wsh_script = ScriptBuilder::new()
+        //    .push_opcode(OP_0)
+        //    .push_slice(bytes_to_push_bytes(&redeem_script.to_p2wsh().as_bytes())?.as_push_bytes())
+        //    .into_script();
+        //
+        //// get p2wsh address
+        //Ok(Address::p2wsh(&p2wsh_script, self.private_key.network))
 
-        // get p2wsh address
-        Ok(Address::p2wsh(&p2wsh_script, self.private_key.network))
+        Ok(Address::p2wsh(&redeem_script, self.private_key.network))
     }
 
     /// Generate redeem script from private key and inscription
@@ -202,15 +204,20 @@ impl Brc20TransactionBuilder {
         Ok(ScriptBuilder::new()
             .push_key(&self.public_key)
             .push_opcode(OP_CHECKSIG)
-            .push_opcode(OP_FALSE)
-            .push_opcode(OP_IF)
-            .push_slice(b"ord")
-            .push_slice(bytes_to_push_bytes(&[0x01])?.as_push_bytes())
-            .push_slice(b"text/plain;charset=utf-8") // NOTE: YES, IT'S CORRECT, DON'T ASK!!! It's not json for some reasons
-            .push_opcode(OP_0)
-            .push_slice(encoded_inscription.as_push_bytes())
-            .push_opcode(OP_ENDIF)
             .into_script())
+
+        //Ok(ScriptBuilder::new()
+        //    .push_key(&self.public_key)
+        //    .push_opcode(OP_CHECKSIG)
+        //    .push_opcode(OP_FALSE)
+        //    .push_opcode(OP_IF)
+        //    .push_slice(b"ord")
+        //    .push_slice(bytes_to_push_bytes(&[0x01])?.as_push_bytes())
+        //    .push_slice(b"text/plain;charset=utf-8") // NOTE: YES, IT'S CORRECT, DON'T ASK!!! It's not json for some reasons
+        //    .push_opcode(OP_0)
+        //    .push_slice(encoded_inscription.as_push_bytes())
+        //    .push_opcode(OP_ENDIF)
+        //    .into_script())
     }
 
     /// Sign transaction p2wsh
