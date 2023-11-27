@@ -138,7 +138,7 @@ async fn broadcast_transaction(transaction: Transaction, network: Network) -> an
     };
 
     let url = format!("https://blockstream.info{network_str}/api/tx");
-    let tx_hex = hex::encode(bitcoin::consensus::serialize(&transaction).to_vec());
+    let tx_hex = hex::encode(&bitcoin::consensus::serialize(&transaction));
     debug!("tx_hex ({}): {tx_hex}", tx_hex.len());
 
     let result = reqwest::Client::new()

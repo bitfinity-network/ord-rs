@@ -3,8 +3,7 @@ use std::str::FromStr;
 use argh::FromArgs;
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
 use bitcoin::opcodes::{OP_0, OP_FALSE};
-use bitcoin::script::Builder as ScriptBuilder;
-use bitcoin::script::PushBytesBuf;
+use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Amount, Network, PrivateKey, ScriptBuf, Transaction, Txid};
 use brc20::transaction::RevealTransactionArgs;
@@ -134,7 +133,7 @@ async fn broadcast_transaction(transaction: Transaction, network: Network) -> an
     };
 
     let url = format!("https://blockstream.info{network_str}/api/tx");
-    let tx_hex = hex::encode(bitcoin::consensus::serialize(&transaction).to_vec());
+    let tx_hex = hex::encode(&bitcoin::consensus::serialize(&transaction));
     debug!("tx_hex ({}): {tx_hex}", tx_hex.len());
 
     let result = reqwest::Client::new()

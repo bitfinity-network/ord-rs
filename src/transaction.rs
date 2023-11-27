@@ -186,7 +186,7 @@ impl Brc20TransactionBuilder {
 
     /// Generate redeem script and then get a pw2sh address to send the commit transaction
     fn generate_p2wsh_address(&self, redeem_script: &ScriptBuf) -> Brc20Result<Address> {
-        Ok(Address::p2wsh(&redeem_script, self.private_key.network))
+        Ok(Address::p2wsh(redeem_script, self.private_key.network))
     }
 
     /// Generate redeem script from private key and inscription
@@ -221,13 +221,13 @@ impl Brc20TransactionBuilder {
         for (index, input) in inputs.iter().enumerate() {
             let signature_hash = match transaction_type {
                 TransactionType::Commit => hash.p2wpkh_signature_hash(
-                    index as usize,
+                    index,
                     txin_script,
                     input.amount,
                     bitcoin::EcdsaSighashType::All,
                 )?,
                 TransactionType::Reveal => hash.p2wsh_signature_hash(
-                    index as usize,
+                    index,
                     txin_script,
                     input.amount,
                     bitcoin::EcdsaSighashType::All,
@@ -278,7 +278,7 @@ impl Brc20TransactionBuilder {
             witness
         } else {
             // otherwise, push pubkey
-            Witness::p2wpkh(&bitcoin::ecdsa::Signature::sighash_all(signature), &pubkey)
+            Witness::p2wpkh(&bitcoin::ecdsa::Signature::sighash_all(signature), pubkey)
         };
 
         // append witness
