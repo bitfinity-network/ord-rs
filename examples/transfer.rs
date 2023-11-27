@@ -11,7 +11,7 @@ use log::{debug, info};
 #[argh(description = "Transfer BRC20 tokens")]
 struct Args {
     #[argh(option, short = 't')]
-    /// to address
+    /// to address (e.g. tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86)
     to: String,
 
     #[argh(option, short = 'T')]

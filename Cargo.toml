@@ -36,3 +36,11 @@ path = "examples/generate_address.rs"
 [[example]]
 name = "transfer"
 path = "examples/transfer.rs"
+
+[[example]]
+name = "reveal-transaction"
+path = "examples/reveal_transaction.rs"
+
+[[example]]
+name = "print-script"
+path = "examples/print_script.rs"

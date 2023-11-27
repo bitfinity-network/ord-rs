@@ -1,5 +1,3 @@
-const POSTAGE: u64 = 333;
-
 use bitcoin::absolute::LockTime;
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
 use bitcoin::opcodes::{OP_0, OP_FALSE};
@@ -15,6 +13,13 @@ use bitcoin_hashes::Hash;
 
 use crate::utils::{bytes_to_push_bytes, sha256sum};
 use crate::{Brc20Error, Brc20Op, Brc20Result};
+
+const POSTAGE: u64 = 333;
+
+enum TransactionType {
+    Commit,
+    Reveal,
+}
 
 /// Builder for BRC20 transactions
 pub struct Brc20TransactionBuilder {
@@ -75,7 +80,7 @@ impl Brc20TransactionBuilder {
     ) -> Brc20Result<CreateCommitTransaction> {
         // get p2wsh address for output of inscription
         let redeem_script = self.generate_redeem_script(&args.inscription)?;
-        let p2wsh_address = self.generate_pw2sh_address(&redeem_script)?;
+        let p2wsh_address = self.generate_p2wsh_address(&redeem_script)?;
 
         // exceeding amount of transaction to send to leftovers recipient
         let leftover_amount = args
@@ -125,129 +130,18 @@ impl Brc20TransactionBuilder {
         };
 
         // sign transaction and update witness
-        self.sign_transaction_p2wpkh(&mut tx, &args.inputs, &args.txin_script_pubkey)?;
+        self.sign_transaction(
+            &mut tx,
+            &args.inputs,
+            &args.txin_script_pubkey,
+            TransactionType::Commit,
+        )?;
 
         Ok(CreateCommitTransaction {
             tx,
             redeem_script,
             reveal_balance: Amount::from_sat(reveal_balance),
         })
-    }
-
-    /// Generate redeem script and then get a pw2sh address to send the commit transaction
-    fn generate_pw2sh_address(&self, redeem_script: &ScriptBuf) -> Brc20Result<Address> {
-        let p2wsh_script = ScriptBuilder::new()
-            .push_opcode(OP_0)
-            .push_slice(bytes_to_push_bytes(&sha256sum(redeem_script.as_bytes()))?.as_push_bytes())
-            .into_script();
-
-        // get p2wsh address
-        Ok(Address::p2wsh(&p2wsh_script, self.private_key.network))
-    }
-
-    /// Generate redeem script from private key and inscription
-    fn generate_redeem_script(&self, inscription: &Brc20Op) -> Brc20Result<ScriptBuf> {
-        let encoded_inscription = bytes_to_push_bytes(inscription.encode()?.as_bytes())?;
-
-        Ok(ScriptBuilder::new()
-            .push_key(&self.public_key)
-            .push_opcode(OP_CHECKSIG)
-            .push_opcode(OP_FALSE)
-            .push_opcode(OP_IF)
-            .push_slice(b"ord")
-            .push_slice(bytes_to_push_bytes(&[0x01])?.as_push_bytes())
-            .push_slice(b"text/plain;charset=utf-8") // NOTE: YES, IT'S CORRECT, DON'T ASK!!! It's not json for some reasons
-            .push_opcode(OP_0)
-            .push_slice(encoded_inscription.as_push_bytes())
-            .push_opcode(OP_ENDIF)
-            .into_script())
-    }
-
-    /// Sign transaction p2wpkh
-    fn sign_transaction_p2wpkh(
-        &self,
-        tx: &mut Transaction,
-        inputs: &[TxInput],
-        txin_script: &ScriptBuf,
-    ) -> Brc20Result<()> {
-        let ctx = secp256k1::Secp256k1::new();
-
-        let mut hash = SighashCache::new(tx.clone());
-        for (index, input) in inputs.iter().enumerate() {
-            let signature_hash = hash.p2wpkh_signature_hash(
-                index as usize,
-                txin_script,
-                input.amount,
-                bitcoin::EcdsaSighashType::All,
-            )?;
-
-            let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
-            let signature = ctx.sign_ecdsa(&message, &self.private_key.inner);
-
-            // verify signature
-            ctx.verify_ecdsa(
-                &message,
-                &signature,
-                &self.private_key.inner.public_key(&ctx),
-            )?;
-
-            // append witness
-            self.append_witness_to_input(tx, signature, index)?;
-        }
-
-        Ok(())
-    }
-
-    /// Sign transaction p2wsh
-    fn sign_transaction_p2wsh(
-        &self,
-        tx: &mut Transaction,
-        inputs: &[TxInput],
-        txin_script: &ScriptBuf,
-    ) -> Brc20Result<()> {
-        let ctx = secp256k1::Secp256k1::new();
-
-        let mut hash = SighashCache::new(tx.clone());
-        for (index, input) in inputs.iter().enumerate() {
-            let signature_hash = hash.p2wsh_signature_hash(
-                index as usize,
-                txin_script,
-                input.amount,
-                bitcoin::EcdsaSighashType::All,
-            )?;
-
-            let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
-            let signature = ctx.sign_ecdsa(&message, &self.private_key.inner);
-
-            // verify signature
-            ctx.verify_ecdsa(
-                &message,
-                &signature,
-                &self.private_key.inner.public_key(&ctx),
-            )?;
-
-            // append witness
-            self.append_witness_to_input(tx, signature, index)?;
-        }
-
-        Ok(())
-    }
-
-    fn append_witness_to_input(
-        &self,
-        tx: &mut Transaction,
-        signature: Signature,
-        index: usize,
-    ) -> Brc20Result<()> {
-        let mut witness = Witness::new();
-        witness.push_ecdsa_signature(&bitcoin::ecdsa::Signature::sighash_all(signature));
-        witness.push(self.public_key.to_bytes());
-        if let Some(input) = tx.input.get_mut(index) {
-            input.witness = witness;
-            Ok(())
-        } else {
-            Err(crate::Brc20Error::InputNotFound(index))
-        }
     }
 
     /// Create the reveal transaction
@@ -280,9 +174,125 @@ impl Brc20TransactionBuilder {
             input: tx_in,
             output: tx_out,
         };
-        self.sign_transaction_p2wsh(&mut tx, &[args.input], &args.redeem_script)?;
+        self.sign_transaction(
+            &mut tx,
+            &[args.input],
+            &args.redeem_script,
+            TransactionType::Reveal,
+        )?;
 
         Ok(tx)
+    }
+
+    /// Generate redeem script and then get a pw2sh address to send the commit transaction
+    fn generate_p2wsh_address(&self, redeem_script: &ScriptBuf) -> Brc20Result<Address> {
+        let p2wsh_script = ScriptBuilder::new()
+            .push_opcode(OP_0)
+            .push_slice(bytes_to_push_bytes(&sha256sum(redeem_script.as_bytes()))?.as_push_bytes())
+            .into_script();
+
+        // get p2wsh address
+        Ok(Address::p2wsh(&p2wsh_script, self.private_key.network))
+    }
+
+    /// Generate redeem script from private key and inscription
+    fn generate_redeem_script(&self, inscription: &Brc20Op) -> Brc20Result<ScriptBuf> {
+        let encoded_inscription = bytes_to_push_bytes(inscription.encode()?.as_bytes())?;
+
+        Ok(ScriptBuilder::new()
+            .push_key(&self.public_key)
+            .push_opcode(OP_CHECKSIG)
+            .push_opcode(OP_FALSE)
+            .push_opcode(OP_IF)
+            .push_slice(b"ord")
+            .push_slice(bytes_to_push_bytes(&[0x01])?.as_push_bytes())
+            .push_slice(b"text/plain;charset=utf-8") // NOTE: YES, IT'S CORRECT, DON'T ASK!!! It's not json for some reasons
+            .push_opcode(OP_0)
+            .push_slice(encoded_inscription.as_push_bytes())
+            .push_opcode(OP_ENDIF)
+            .into_script())
+    }
+
+    /// Sign transaction p2wsh
+    fn sign_transaction(
+        &self,
+        tx: &mut Transaction,
+        inputs: &[TxInput],
+        txin_script: &ScriptBuf,
+        transaction_type: TransactionType,
+    ) -> Brc20Result<()> {
+        let ctx = secp256k1::Secp256k1::new();
+
+        let mut hash = SighashCache::new(tx.clone());
+        for (index, input) in inputs.iter().enumerate() {
+            let signature_hash = match transaction_type {
+                TransactionType::Commit => hash.p2wpkh_signature_hash(
+                    index as usize,
+                    txin_script,
+                    input.amount,
+                    bitcoin::EcdsaSighashType::All,
+                )?,
+                TransactionType::Reveal => hash.p2wsh_signature_hash(
+                    index as usize,
+                    txin_script,
+                    input.amount,
+                    bitcoin::EcdsaSighashType::All,
+                )?,
+            };
+
+            let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
+            let signature = ctx.sign_ecdsa(&message, &self.private_key.inner);
+
+            let pubkey = self.private_key.inner.public_key(&ctx);
+            // verify signature
+            ctx.verify_ecdsa(&message, &signature, &pubkey)?;
+            // append witness
+            match transaction_type {
+                TransactionType::Commit => {
+                    self.append_witness_to_input(&mut hash, signature, index, &pubkey, None)?;
+                }
+                TransactionType::Reveal => {
+                    self.append_witness_to_input(
+                        &mut hash,
+                        signature,
+                        index,
+                        &pubkey,
+                        Some(txin_script),
+                    )?;
+                }
+            }
+        }
+
+        *tx = hash.into_transaction();
+
+        Ok(())
+    }
+
+    fn append_witness_to_input(
+        &self,
+        sighasher: &mut SighashCache<Transaction>,
+        signature: Signature,
+        index: usize,
+        pubkey: &bitcoin::secp256k1::PublicKey,
+        redeem_script: Option<&ScriptBuf>,
+    ) -> Brc20Result<()> {
+        // push redeem script if necessary
+        let witness = if let Some(redeem_script) = redeem_script {
+            let mut witness = Witness::new();
+            witness.push_ecdsa_signature(&bitcoin::ecdsa::Signature::sighash_all(signature));
+            witness.push(redeem_script.as_bytes());
+            witness
+        } else {
+            // otherwise, push pubkey
+            Witness::p2wpkh(&bitcoin::ecdsa::Signature::sighash_all(signature), &pubkey)
+        };
+
+        // append witness
+        *sighasher
+            .witness_mut(index)
+            .ok_or(Brc20Error::InputNotFound(index))? = witness;
+
+        Ok(())
     }
 }
 
@@ -317,7 +327,7 @@ mod test {
     #[test]
     fn test_should_build_deploy_transactions_from_existing_data() {
         // this test refers to this testnet transaction:
-        // <https://mempool.space/testnet/tx/https://mempool.space/testnet/tx/a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883>
+        // <https://mempool.space/testnet/tx/a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883>
         // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
         let private_key = PrivateKey::from_wif(WIF).unwrap();
         let public_key = private_key.public_key(&Secp256k1::new());
