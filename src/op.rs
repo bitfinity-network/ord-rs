@@ -22,6 +22,7 @@ pub enum Brc20Op {
 }
 
 impl Brc20Op {
+    /// Create a new BRC-20 deploy operation
     pub fn deploy(tick: impl ToString, max: u64, lim: Option<u64>, dec: Option<u64>) -> Self {
         Self::Deploy(Brc20Deploy {
             protocol: PROTOCOL.to_string(),
@@ -32,6 +33,7 @@ impl Brc20Op {
         })
     }
 
+    /// Create a new BRC-20 mint operation
     pub fn mint(tick: impl ToString, amt: u64) -> Self {
         Self::Mint(Brc20Mint {
             protocol: PROTOCOL.to_string(),
@@ -40,6 +42,7 @@ impl Brc20Op {
         })
     }
 
+    /// Create a new BRC-20 transfer operation
     pub fn transfer(tick: impl ToString, amt: u64) -> Self {
         Self::Transfer(Brc20Transfer {
             protocol: PROTOCOL.to_string(),
