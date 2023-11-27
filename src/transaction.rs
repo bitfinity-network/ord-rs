@@ -80,7 +80,7 @@ impl Brc20TransactionBuilder {
     ) -> Brc20Result<CreateCommitTransaction> {
         // get p2wsh address for output of inscription
         let redeem_script = self.generate_redeem_script(&args.inscription)?;
-        let p2wsh_address = self.generate_p2wsh_address(&redeem_script)?;
+        let script_output_address = Address::p2wsh(&redeem_script, self.private_key.network);
 
         // exceeding amount of transaction to send to leftovers recipient
         let leftover_amount = args
@@ -98,7 +98,7 @@ impl Brc20TransactionBuilder {
         let tx_out = vec![
             TxOut {
                 value: Amount::from_sat(reveal_balance),
-                script_pubkey: p2wsh_address.script_pubkey(),
+                script_pubkey: script_output_address.script_pubkey(),
             },
             TxOut {
                 value: Amount::from_sat(leftover_amount),
@@ -182,11 +182,6 @@ impl Brc20TransactionBuilder {
         )?;
 
         Ok(tx)
-    }
-
-    /// Generate redeem script and then get a pw2sh address to send the commit transaction
-    fn generate_p2wsh_address(&self, redeem_script: &ScriptBuf) -> Brc20Result<Address> {
-        Ok(Address::p2wsh(redeem_script, self.private_key.network))
     }
 
     /// Generate redeem script from private key and inscription

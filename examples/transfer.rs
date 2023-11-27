@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::time::Duration;
 
 use argh::FromArgs;
 use bitcoin::secp256k1::Secp256k1;
@@ -81,18 +82,18 @@ async fn main() -> anyhow::Result<()> {
     })?;
     debug!("commit transaction: {commit_tx:?}");
 
-    let txid = if args.dry_run {
+    let commit_txid = if args.dry_run {
         commit_tx.tx.txid()
     } else {
-        info!("broadcasting transaction: {}", commit_tx.tx.txid());
+        info!("broadcasting Commit transaction: {}", commit_tx.tx.txid());
         broadcast_transaction(commit_tx.tx, network).await?
     };
-    info!("Transaction broadcasted: {}", txid);
+    info!("Commit transaction broadcasted: {}", commit_txid);
 
     debug!("getting reveal transaction...");
     let reveal_transaction = builder.build_reveal_transaction(RevealTransactionArgs {
         input: brc20::transaction::TxInput {
-            id: txid,
+            id: commit_txid,
             index: 0,
             amount: commit_tx.reveal_balance,
         },
@@ -102,9 +103,27 @@ async fn main() -> anyhow::Result<()> {
     debug!("reveal transaction: {reveal_transaction:?}");
 
     if !args.dry_run {
-        info!("broadcasting transaction: {}", reveal_transaction.txid());
+        // wait for commit transaction to be confirmed
+        loop {
+            info!("waiting for commit transaction to be confirmed...");
+            if get_tx_by_hash(&commit_txid, network)
+                .await?
+                .status
+                .confirmed
+            {
+                break;
+            }
+
+            debug!("retrying in 30 seconds...");
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
+
+        info!(
+            "commit transaction confirmed; broadcasting reveal transaction: {}",
+            reveal_transaction.txid()
+        );
         let txid = broadcast_transaction(reveal_transaction, network).await?;
-        info!("Transaction broadcasted: {}", txid);
+        info!("Reveal transaction broadcasted: {}", txid);
     }
 
     Ok(())
@@ -210,9 +229,15 @@ fn parse_inputs(input: Vec<String>) -> Vec<(Txid, u32)> {
 #[derive(Debug, serde::Deserialize)]
 struct ApiTransaction {
     vout: Vec<ApiVout>,
+    status: ApiStatus,
 }
 
 #[derive(Debug, serde::Deserialize)]
 struct ApiVout {
     value: u64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ApiStatus {
+    confirmed: bool,
 }
