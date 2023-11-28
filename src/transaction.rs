@@ -80,7 +80,9 @@ impl Brc20TransactionBuilder {
     ) -> Brc20Result<CreateCommitTransaction> {
         // get p2wsh address for output of inscription
         let redeem_script = self.generate_redeem_script(&args.inscription)?;
+        debug!("redeem_script: {redeem_script}");
         let script_output_address = Address::p2wsh(&redeem_script, self.private_key.network);
+        debug!("script_output_address: {script_output_address}");
 
         // exceeding amount of transaction to send to leftovers recipient
         let leftover_amount = args
@@ -92,8 +94,10 @@ impl Brc20TransactionBuilder {
             .and_then(|v| v.checked_sub(args.commit_fee))
             .and_then(|v| v.checked_sub(args.reveal_fee))
             .ok_or(Brc20Error::InsufficientBalance)?;
+        debug!("leftover_amount: {leftover_amount}");
 
         let reveal_balance = POSTAGE + args.reveal_fee;
+        debug!("reveal_balance: {reveal_balance}");
 
         let tx_out = vec![
             TxOut {
@@ -231,10 +235,13 @@ impl Brc20TransactionBuilder {
 
             let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
             let signature = ctx.sign_ecdsa(&message, &self.private_key.inner);
+            debug!("signature: {}", signature.serialize_der());
 
             let pubkey = self.private_key.inner.public_key(&ctx);
             // verify signature
+            debug!("verifying signature");
             ctx.verify_ecdsa(&message, &signature, &pubkey)?;
+            debug!("signature verified");
             // append witness
             match transaction_type {
                 TransactionType::Commit => {
@@ -275,6 +282,7 @@ impl Brc20TransactionBuilder {
             // otherwise, push pubkey
             Witness::p2wpkh(&bitcoin::ecdsa::Signature::sighash_all(signature), pubkey)
         };
+        debug!("witness: {witness:?}");
 
         // append witness
         *sighasher
