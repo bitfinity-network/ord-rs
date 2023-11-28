@@ -308,15 +308,15 @@ mod test {
     use hex_literal::hex;
 
     use super::*;
-    use crate::utils::test_utils::generate_btc_address;
     use crate::Brc20Op;
 
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
     #[test]
-    fn test_should_build_deploy_transactions_from_existing_data() {
-        // this test refers to this testnet transaction:
-        // <https://mempool.space/testnet/tx/a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883>
+    fn test_should_build_transfer_for_brc20_transactions_from_existing_data() {
+        // this test refers to these testnet transactions, commit and reveal:
+        // <https://mempool.space/testnet/tx/4472899344bce1a6c83c6ec45859f79ab622b55b3faf67e555e3e03cee5139e6>
+        // <https://mempool.space/testnet/tx/c769750df54ee38fe2bae876dbf1632c779c3af780958a19cee1ca0497c78e80>
         // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
         let private_key = PrivateKey::from_wif(WIF).unwrap();
         let public_key = private_key.public_key(&Secp256k1::new());
@@ -327,17 +327,17 @@ mod test {
         let commit_transaction_args = CreateCommitTransactionArgs {
             inputs: vec![TxInput {
                 id: Txid::from_str(
-                    "a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883",
+                    "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
                 )
                 .unwrap(), // the transaction that funded our walle
-                index: 0,
+                index: 1,
                 amount: Amount::from_sat(8_000),
             }],
             txin_script_pubkey: address.script_pubkey(),
-            inscription: Brc20Op::deploy("mona".to_string(), 21_000_000, Some(1_000), None),
+            inscription: Brc20Op::transfer("mona".to_string(), 100),
             leftovers_recipient: address.clone(),
-            commit_fee: 2307,
-            reveal_fee: 4667,
+            commit_fee: 2_500,
+            reveal_fee: 4_700,
         };
         let tx_result = builder
             .build_commit_transaction(commit_transaction_args)
@@ -347,10 +347,7 @@ mod test {
 
         let witness = tx_result.tx.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 2);
-        //for w in witness.to_vec() {
-        //    println!("{}", hex::encode(w));
-        //}
-        // assert_eq!(witness[0], hex!("3045022100f351dbd93f0c58cbdd4475515c646324bf2ec04098727e39ee57ac8b6e39564b022059b8b88b6e159471efe9fb199cf7afeb4a8c8396c0c8f63208197b2d11c58ea401"));
+        assert_eq!(witness[0], hex!("30440220708c02ce8166b739f4190bf98538c897f676adc1304bb368ebe910f817fd489602205d708a826b416c2852a6bd7ea464fde8ef3a08eb2fc085ec9e71ed71f6dc582901"));
         assert_eq!(
             witness[1],
             hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
@@ -364,63 +361,51 @@ mod test {
         );
         assert_eq!(
             tx_result.tx.input[0].previous_output.txid,
-            Txid::from_str("a2153d0c0efba1b8499fdeb61b86a768034c3541d6056754e23a44ce4a03a883",)
+            Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",)
                 .unwrap()
         );
 
         // txout
         assert_eq!(tx_result.tx.output.len(), 2);
-        assert_eq!(tx_result.tx.output[0].value, Amount::from_sat(5_000));
-        assert_eq!(tx_result.tx.output[1].value, Amount::from_sat(693));
+        assert_eq!(tx_result.tx.output[0].value, Amount::from_sat(5_033));
+        assert_eq!(tx_result.tx.output[1].value, Amount::from_sat(467));
 
         println!("{}", tx_result.redeem_script);
 
-        println!("\n\n\n\n\n\n");
-    }
-
-    #[test]
-    fn test_should_build_reveal_transaction() {
-        let (address, privkey) = generate_btc_address(Network::Bitcoin);
-
-        let builder = Brc20TransactionBuilder::new(privkey);
-
-        let reveal_fee = 7_000;
-
-        let commit_tx = builder
-            .build_commit_transaction(CreateCommitTransactionArgs {
-                inputs: vec![TxInput {
-                    id: Txid::from_str(
-                        "5b3cf3573442df94895dfdef2509a6bc38c245bb9c403c9879933bb4c47452b1",
-                    )
-                    .unwrap(),
-                    index: 0,
-                    amount: Amount::from_sat(100_000),
-                }],
-                txin_script_pubkey: address.script_pubkey(),
-                inscription: Brc20Op::deploy("ordi".to_string(), 21_000_000, Some(100_000), None),
-                leftovers_recipient: address.clone(),
-                commit_fee: 15_000,
-                reveal_fee,
-            })
+        let tx_id = tx_result.tx.txid();
+        let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
+            .unwrap()
+            .require_network(Network::Testnet)
             .unwrap();
 
-        let reveal_tx = builder
+        let reveal_transaction = builder
             .build_reveal_transaction(RevealTransactionArgs {
                 input: TxInput {
-                    id: Txid::from_str(
-                        "afe019fb1556e7eb1626ba85fa92fb90b2ee9769f6d01647454bc389d4431b6f",
-                    )
-                    .unwrap(),
+                    id: tx_id,
                     index: 0,
-                    amount: commit_tx.reveal_balance,
+                    amount: tx_result.reveal_balance,
                 },
-                recipient_address: address,
-                redeem_script: commit_tx.redeem_script.clone(),
+                recipient_address: recipient_address.clone(),
+                redeem_script: tx_result.redeem_script,
             })
             .unwrap();
 
-        assert_eq!(reveal_tx.input.len(), 1);
-        assert_eq!(reveal_tx.output.len(), 1);
-        assert_eq!(reveal_tx.output[0].value, Amount::from_sat(POSTAGE));
+        let witness = reveal_transaction.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 2);
+        assert_eq!(witness[0], hex!("3045022100a377f8dc92b903a99c39113d834013e231fbe82caf148fe23ae895fdbb0b04a002203b8dcc738ea682e4931ae752ac57883b85f31e9bea9641974488dfd32e2bb48201"));
+        assert_eq!(
+            witness[1],
+            hex!("2102d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240ac0063036f7264010118746578742f706c61696e3b636861727365743d7574662d3800387b226f70223a227472616e73666572222c2270223a226272632d3230222c227469636b223a226d6f6e61222c22616d74223a22313030227d68")
+        );
+
+        assert_eq!(reveal_transaction.output.len(), 1);
+        assert_eq!(
+            reveal_transaction.output[0].value,
+            Amount::from_sat(POSTAGE)
+        );
+        assert_eq!(
+            reveal_transaction.output[0].script_pubkey,
+            recipient_address.script_pubkey()
+        );
     }
 }
