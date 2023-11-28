@@ -9,12 +9,8 @@ use brc20::{Brc20Op, Brc20TransactionBuilder};
 use log::{debug, info};
 
 #[derive(FromArgs, Debug)]
-#[argh(description = "Transfer BRC20 tokens")]
+#[argh(description = "Mint BRC20 tokens")]
 struct Args {
-    #[argh(option, short = 't')]
-    /// to address (e.g. tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86)
-    to: String,
-
     #[argh(option, short = 'T')]
     /// ticker
     ticker: String,
@@ -53,8 +49,6 @@ async fn main() -> anyhow::Result<()> {
         _ => panic!("invalid network"),
     };
 
-    let recipient = Address::from_str(&args.to)?.require_network(network)?;
-    debug!("recipient: {recipient}");
     let ticker = args.ticker;
     let amount = args.amount;
     let private_key = PrivateKey::from_wif(&args.private_key)?;
@@ -74,9 +68,9 @@ async fn main() -> anyhow::Result<()> {
     let builder = Brc20TransactionBuilder::new(private_key);
     let commit_tx = builder.build_commit_transaction(CreateCommitTransactionArgs {
         inputs,
-        inscription: Brc20Op::transfer(ticker, amount),
+        inscription: Brc20Op::mint(ticker, amount),
         txin_script_pubkey: sender_address.script_pubkey(),
-        leftovers_recipient: sender_address,
+        leftovers_recipient: sender_address.clone(),
         commit_fee,
         reveal_fee,
     })?;
@@ -97,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
             index: 0,
             amount: commit_tx.reveal_balance,
         },
-        recipient_address: recipient,
+        recipient_address: sender_address,
         redeem_script: commit_tx.redeem_script,
     })?;
     debug!("reveal transaction: {reveal_transaction:?}");

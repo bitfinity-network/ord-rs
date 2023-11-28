@@ -9,12 +9,8 @@ use brc20::{Brc20Op, Brc20TransactionBuilder};
 use log::{debug, info};
 
 #[derive(FromArgs, Debug)]
-#[argh(description = "Transfer BRC20 tokens")]
+#[argh(description = "Deploy a BRC20 token")]
 struct Args {
-    #[argh(option, short = 't')]
-    /// to address (e.g. tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86)
-    to: String,
-
     #[argh(option, short = 'T')]
     /// ticker
     ticker: String,
@@ -22,6 +18,10 @@ struct Args {
     #[argh(option, short = 'a')]
     /// amount
     amount: u64,
+
+    #[argh(option, short = 'l')]
+    /// amount
+    limit: u64,
 
     #[argh(option, short = 'p')]
     /// private key
@@ -53,10 +53,9 @@ async fn main() -> anyhow::Result<()> {
         _ => panic!("invalid network"),
     };
 
-    let recipient = Address::from_str(&args.to)?.require_network(network)?;
-    debug!("recipient: {recipient}");
     let ticker = args.ticker;
     let amount = args.amount;
+    let limit = args.limit;
     let private_key = PrivateKey::from_wif(&args.private_key)?;
     let public_key = private_key.public_key(&Secp256k1::new());
     let sender_address = Address::p2wpkh(&public_key, network).unwrap();
@@ -74,9 +73,9 @@ async fn main() -> anyhow::Result<()> {
     let builder = Brc20TransactionBuilder::new(private_key);
     let commit_tx = builder.build_commit_transaction(CreateCommitTransactionArgs {
         inputs,
-        inscription: Brc20Op::transfer(ticker, amount),
+        inscription: Brc20Op::deploy(ticker, amount, Some(limit), None),
         txin_script_pubkey: sender_address.script_pubkey(),
-        leftovers_recipient: sender_address,
+        leftovers_recipient: sender_address.clone(),
         commit_fee,
         reveal_fee,
     })?;
@@ -97,15 +96,15 @@ async fn main() -> anyhow::Result<()> {
             index: 0,
             amount: commit_tx.reveal_balance,
         },
-        recipient_address: recipient,
+        recipient_address: sender_address,
         redeem_script: commit_tx.redeem_script,
     })?;
     debug!("reveal transaction: {reveal_transaction:?}");
 
     if !args.dry_run {
-        // wait for commit transaction to be confirmed
+        // wait for commit transaction to be inserted
         loop {
-            info!("waiting for commit transaction to be confirmed...");
+            info!("waiting for commit transaction to be inserted...");
             if get_tx_by_hash(&commit_txid, network).await.is_ok() {
                 break;
             }

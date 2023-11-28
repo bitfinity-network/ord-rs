@@ -37,5 +37,13 @@ name = "transfer"
 path = "examples/transfer.rs"
 
 [[example]]
+name = "mint"
+path = "examples/mint.rs"
+
+[[example]]
+name = "deploy"
+path = "examples/deploy.rs"
+
+[[example]]
 name = "print-script"
 path = "examples/print_script.rs"
