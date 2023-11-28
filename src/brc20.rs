@@ -75,7 +75,7 @@ impl Inscription for Brc20 {
 
     fn data(&self) -> OrdResult<PushBytesBuf> {
         // encode
-        let buf = bytes_to_push_bytes(&self.encode()?.as_bytes())?;
+        let buf = bytes_to_push_bytes(self.encode()?.as_bytes())?;
         Ok(buf)
     }
 }
