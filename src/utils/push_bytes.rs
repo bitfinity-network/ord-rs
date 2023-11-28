@@ -1,8 +1,8 @@
 use bitcoin::script::PushBytesBuf;
 
-use crate::Brc20Result;
+use crate::OrdResult;
 
-pub fn bytes_to_push_bytes(bytes: &[u8]) -> Brc20Result<PushBytesBuf> {
+pub fn bytes_to_push_bytes(bytes: &[u8]) -> OrdResult<PushBytesBuf> {
     let mut push_bytes = PushBytesBuf::with_capacity(bytes.len());
     push_bytes.extend_from_slice(bytes)?;
 

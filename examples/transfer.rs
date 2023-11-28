@@ -5,8 +5,9 @@ use argh::FromArgs;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Amount, Network, PrivateKey, Transaction, Txid};
 use log::{debug, info};
+use ord_rs::brc20::Brc20;
 use ord_rs::transaction::{CreateCommitTransactionArgs, RevealTransactionArgs, TxInput};
-use ord_rs::{Brc20Op, Brc20TransactionBuilder};
+use ord_rs::Brc20TransactionBuilder;
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "Transfer BRC20 tokens")]
@@ -74,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     let builder = Brc20TransactionBuilder::new(private_key);
     let commit_tx = builder.build_commit_transaction(CreateCommitTransactionArgs {
         inputs,
-        inscription: Brc20Op::transfer(ticker, amount),
+        inscription: Brc20::transfer(ticker, amount),
         txin_script_pubkey: sender_address.script_pubkey(),
         leftovers_recipient: sender_address,
         commit_fee,
