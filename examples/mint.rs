@@ -4,9 +4,9 @@ use std::time::Duration;
 use argh::FromArgs;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Amount, Network, PrivateKey, Transaction, Txid};
-use brc20::transaction::{CreateCommitTransactionArgs, RevealTransactionArgs, TxInput};
-use brc20::{Brc20Op, Brc20TransactionBuilder};
 use log::{debug, info};
+use ord_rs::transaction::{CreateCommitTransactionArgs, RevealTransactionArgs, TxInput};
+use ord_rs::{Brc20Op, Brc20TransactionBuilder};
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "Mint BRC20 tokens")]
@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
 
     debug!("getting reveal transaction...");
     let reveal_transaction = builder.build_reveal_transaction(RevealTransactionArgs {
-        input: brc20::transaction::TxInput {
+        input: ord_rs::transaction::TxInput {
             id: commit_txid,
             index: 0,
             amount: commit_tx.reveal_balance,

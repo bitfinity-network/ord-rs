@@ -1,6 +1,6 @@
-# BRC20 Rust
+# ord-rs Rust
 
-[![build-test](https://github.com/bitfinity-network/brc20-rs/actions/workflows/build-test.yml/badge.svg)](https://github.com/bitfinity-network/brc20-rs/actions/workflows/build-test.yml)
+[![build-test](https://github.com/bitfinity-network/ord-rs-rs/actions/workflows/build-test.yml/badge.svg)](https://github.com/bitfinity-network/ord-rs-rs/actions/workflows/build-test.yml)
 
 ## Get started
 
@@ -8,7 +8,7 @@
 
 ### Transfer
 
-You can use the example in `examples/transfer.rs` to transfer  BRC20 token to another address.
+You can use the example in `examples/transfer.rs` to transfer  ord-rs token to another address.
 
 To transfer tokens run the following command:
 
@@ -26,7 +26,7 @@ An example:
 
 ```sh
 cargo run --example transfer -- -t tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86 
-  -T mona 
+  -T ordi 
   -a 100 
   -p "xxxxx" 
   -n testnet 

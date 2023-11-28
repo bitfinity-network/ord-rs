@@ -1,4 +1,4 @@
-//! # BRC20
+//! # ord-rs
 //!
 //! # Get started
 //!
