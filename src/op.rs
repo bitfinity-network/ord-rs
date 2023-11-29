@@ -1,6 +1,10 @@
+use std::str::FromStr;
+
 use serde_with::{serde_as, DisplayFromStr};
 
-const PROTOCOL: &str = "p";
+use crate::{Brc20Error, Brc20Result};
+
+const PROTOCOL: &str = "brc-20";
 
 /// BRC-20 operation
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,6 +22,7 @@ pub enum Brc20Op {
 }
 
 impl Brc20Op {
+    /// Create a new BRC-20 deploy operation
     pub fn deploy(tick: impl ToString, max: u64, lim: Option<u64>, dec: Option<u64>) -> Self {
         Self::Deploy(Brc20Deploy {
             protocol: PROTOCOL.to_string(),
@@ -28,6 +33,7 @@ impl Brc20Op {
         })
     }
 
+    /// Create a new BRC-20 mint operation
     pub fn mint(tick: impl ToString, amt: u64) -> Self {
         Self::Mint(Brc20Mint {
             protocol: PROTOCOL.to_string(),
@@ -36,12 +42,26 @@ impl Brc20Op {
         })
     }
 
+    /// Create a new BRC-20 transfer operation
     pub fn transfer(tick: impl ToString, amt: u64) -> Self {
         Self::Transfer(Brc20Transfer {
             protocol: PROTOCOL.to_string(),
             tick: tick.to_string(),
             amt,
         })
+    }
+
+    /// Encode the BRC-20 operation as a JSON string
+    pub fn encode(&self) -> Brc20Result<String> {
+        serde_json::to_string(self).map_err(Brc20Error::from)
+    }
+}
+
+impl FromStr for Brc20Op {
+    type Err = Brc20Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(s).map_err(Brc20Error::from)
     }
 }
 
@@ -180,5 +200,18 @@ mod test {
                 amt: 100
             })
         );
+    }
+
+    #[test]
+    fn test_should_encode_and_decode() {
+        let op = Brc20Op::Transfer(Brc20Transfer {
+            protocol: "brc-20".to_string(),
+            tick: "ordi".to_string(),
+            amt: 100,
+        });
+
+        let s = op.encode().unwrap();
+
+        assert_eq!(Brc20Op::from_str(&s).unwrap(), op);
     }
 }

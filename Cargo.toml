@@ -5,18 +5,45 @@ license = "MIT"
 version = "0.1.0"
 authors = ["Finity Technologies"]
 description = "A library for working with BRC-20 tokens."
-repository = "https://github.com/bitfinity-network/brc-20-rs"
-documentation = "https://docs.rs/brc-20"
-
-[lib]
-name = "brc20"
-path = "src/lib.rs"
+repository = "https://github.com/bitfinity-network/brc20-rs"
+documentation = "https://docs.rs/brc20"
+edition = "2021"
 
 [dependencies]
-bitcoin = { version = "^0.31" }
-serde = { version = "^1", features = ["derive"] }
-serde_json = "^1"
-serde_with = "^3"
-thiserror = "^1"
+bitcoin = "0.31"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = { version = "3", default-features = false, features = ["macros"] }
+thiserror = "1"
 
 [dev-dependencies]
+anyhow = "1"
+argh = "0.1"
+bip39 = "2"
+env_logger = "0.10"
+hex = "0.4"
+hex-literal = "0.4"
+rand = { version = "0.8" }
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+
+[[example]]
+name = "generate-address"
+path = "examples/generate_address.rs"
+
+[[example]]
+name = "transfer"
+path = "examples/transfer.rs"
+
+[[example]]
+name = "mint"
+path = "examples/mint.rs"
+
+[[example]]
+name = "deploy"
+path = "examples/deploy.rs"
+
+[[example]]
+name = "print-script"
+path = "examples/print_script.rs"
