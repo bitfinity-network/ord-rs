@@ -1,6 +1,6 @@
 # ord-rs Rust
 
-[![build-test](https://github.com/bitfinity-network/ord-rs-rs/actions/workflows/build-test.yml/badge.svg)](https://github.com/bitfinity-network/ord-rs-rs/actions/workflows/build-test.yml)
+[![build-test](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml/badge.svg)](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml)
 
 ## Get started
 

@@ -5,7 +5,7 @@ license = "MIT"
 version = "0.1.0"
 authors = ["Finity Technologies"]
 description = "A library for working with BRC-20 tokens."
-repository = "https://github.com/bitfinity-network/ord-rs-rs"
+repository = "https://github.com/bitfinity-network/ord-rs"
 documentation = "https://docs.rs/ord-rs"
 edition = "2021"
 

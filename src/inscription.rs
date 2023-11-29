@@ -25,5 +25,7 @@ pub trait Inscription {
     /// and then the footer:
     ///
     /// - OP_ENDIF
+    ///
+    /// So for example in case of a BRC20, this function must return the JSON encoded BRC20 operation as `PushBytes`.
     fn data(&self) -> OrdResult<PushBytesBuf>;
 }
