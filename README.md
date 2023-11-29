@@ -8,7 +8,7 @@
 
 ### Transfer
 
-You can use the example in `examples/transfer.rs` to transfer  ord-rs token to another address.
+You can use the example in `examples/transfer.rs` to transfer BRC20 token to another address.
 
 To transfer tokens run the following command:
 

@@ -204,9 +204,7 @@ impl Brc20TransactionBuilder {
             .push_opcode(OP_IF)
             .push_slice(b"ord")
             .push_slice(b"\x01")
-            .push_slice(
-                bytes_to_push_bytes(inscription.content_type().as_bytes())?.as_push_bytes(),
-            )
+            .push_slice(bytes_to_push_bytes(inscription.content_type().as_bytes())?.as_push_bytes())
             .push_opcode(OP_0)
             .push_slice(inscription.data()?.as_push_bytes())
             .push_opcode(OP_ENDIF)
