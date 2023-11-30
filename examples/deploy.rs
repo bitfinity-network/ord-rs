@@ -7,7 +7,7 @@ use bitcoin::{Address, Amount, Network, PrivateKey, Transaction, Txid};
 use log::{debug, info};
 use ord_rs::brc20::Brc20;
 use ord_rs::transaction::{CreateCommitTransactionArgs, RevealTransactionArgs, TxInput};
-use ord_rs::Brc20TransactionBuilder;
+use ord_rs::{OrdTransactionBuilder, ScriptType};
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "Deploy a BRC20 token")]
@@ -36,6 +36,10 @@ struct Args {
     /// network
     network: String,
 
+    #[argh(option, short = 's', default = "String::from(\"p2tr\")")]
+    /// script type (p2tr, p2wsh)
+    script_type: String,
+
     #[argh(switch, short = 'd')]
     /// dry run, don't send any transaction
     dry_run: bool,
@@ -52,6 +56,11 @@ async fn main() -> anyhow::Result<()> {
         "testnet" | "test" => Network::Testnet,
         "mainnet" | "prod" => Network::Bitcoin,
         _ => panic!("invalid network"),
+    };
+    let script_type = match args.script_type.as_str() {
+        "p2tr" | "P2TR" => ScriptType::P2TR,
+        "p2wsh" | "P2WSH" => ScriptType::P2WSH,
+        _ => anyhow::bail!("invalid script type"),
     };
 
     let ticker = args.ticker;
@@ -71,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
     let inputs = sats_amount_from_tx_inputs(&inputs, network).await?;
 
     debug!("getting commit transaction...");
-    let builder = Brc20TransactionBuilder::new(private_key);
+    let builder = OrdTransactionBuilder::new(private_key, script_type);
     let commit_tx = builder.build_commit_transaction(CreateCommitTransactionArgs {
         inputs,
         inscription: Brc20::deploy(ticker, amount, Some(limit), None),

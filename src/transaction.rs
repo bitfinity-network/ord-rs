@@ -17,15 +17,26 @@ use crate::{OrdError, OrdResult};
 
 const POSTAGE: u64 = 333;
 
+/// Type of the transaction to sign
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TransactionType {
     Commit,
     Reveal,
 }
 
+/// Type of the script to use. Both are supported, but P2WSH may not be supported by all the indexers
+/// So P2TR is preferred
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptType {
+    P2WSH,
+    P2TR,
+}
+
 /// Builder for BRC20 transactions
-pub struct Brc20TransactionBuilder {
+pub struct OrdTransactionBuilder {
     private_key: PrivateKey,
     public_key: PublicKey,
+    script_type: ScriptType,
 }
 
 #[derive(Debug)]
@@ -68,12 +79,14 @@ pub struct RevealTransactionArgs {
     pub redeem_script: ScriptBuf,
 }
 
-impl Brc20TransactionBuilder {
-    pub fn new(private_key: PrivateKey) -> Self {
+impl OrdTransactionBuilder {
+    /// Initialize a new OrdTransactionBuilder with the given private key and the script type to use
+    pub fn new(private_key: PrivateKey, script_type: ScriptType) -> Self {
         let public_key = private_key.public_key(&bitcoin::secp256k1::Secp256k1::new());
         Self {
             private_key,
             public_key,
+            script_type,
         }
     }
 
@@ -298,12 +311,6 @@ impl Brc20TransactionBuilder {
     }
 }
 
-impl From<PrivateKey> for Brc20TransactionBuilder {
-    fn from(private_key: PrivateKey) -> Self {
-        Self::new(private_key)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct TxInput {
     pub id: Txid,
@@ -326,7 +333,7 @@ mod test {
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
     #[test]
-    fn test_should_build_transfer_for_brc20_transactions_from_existing_data() {
+    fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2wsh() {
         // this test refers to these testnet transactions, commit and reveal:
         // <https://mempool.space/testnet/tx/4472899344bce1a6c83c6ec45859f79ab622b55b3faf67e555e3e03cee5139e6>
         // <https://mempool.space/testnet/tx/c769750df54ee38fe2bae876dbf1632c779c3af780958a19cee1ca0497c78e80>
@@ -335,7 +342,7 @@ mod test {
         let public_key = private_key.public_key(&Secp256k1::new());
         let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
 
-        let builder = Brc20TransactionBuilder::new(private_key);
+        let builder = OrdTransactionBuilder::new(private_key, ScriptType::P2WSH);
 
         let commit_transaction_args = CreateCommitTransactionArgs {
             inputs: vec![TxInput {
