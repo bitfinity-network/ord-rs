@@ -1,16 +1,16 @@
+mod signer;
+
 use bitcoin::absolute::LockTime;
-use bitcoin::hashes::Hash as _;
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
 use bitcoin::opcodes::{OP_0, OP_FALSE};
 use bitcoin::script::Builder as ScriptBuilder;
-use bitcoin::secp256k1::ecdsa::Signature;
-use bitcoin::sighash::SighashCache;
 use bitcoin::transaction::Version;
 use bitcoin::{
-    secp256k1, Address, Amount, OutPoint, PrivateKey, PublicKey, ScriptBuf, Sequence, Transaction,
-    TxIn, TxOut, Txid, Witness,
+    Address, Amount, OutPoint, PrivateKey, PublicKey, ScriptBuf, Sequence, Transaction, TxIn,
+    TxOut, Txid, Witness,
 };
 
+use self::signer::Signer;
 use crate::inscription::Inscription;
 use crate::utils::bytes_to_push_bytes;
 use crate::{OrdError, OrdResult};
@@ -154,12 +154,8 @@ impl OrdTransactionBuilder {
         };
 
         // sign transaction and update witness
-        self.sign_transaction(
-            &mut tx,
-            &args.inputs,
-            &args.txin_script_pubkey,
-            TransactionType::Commit,
-        )?;
+        let mut signer = Signer::new(&self.private_key, self.script_type, &mut tx);
+        signer.sign_commit_transaction(&args.inputs, &args.txin_script_pubkey)?;
 
         Ok(CreateCommitTransaction {
             tx,
@@ -195,12 +191,8 @@ impl OrdTransactionBuilder {
             input: tx_in,
             output: tx_out,
         };
-        self.sign_transaction(
-            &mut tx,
-            &[args.input],
-            &args.redeem_script,
-            TransactionType::Reveal,
-        )?;
+        let mut signer = Signer::new(&self.private_key, self.script_type, &mut tx);
+        signer.sign_reveal_transaction(&args.input, &args.redeem_script)?;
 
         Ok(tx)
     }
@@ -222,92 +214,6 @@ impl OrdTransactionBuilder {
             .push_slice(inscription.data()?.as_push_bytes())
             .push_opcode(OP_ENDIF)
             .into_script())
-    }
-
-    /// Sign transaction p2wsh
-    fn sign_transaction(
-        &self,
-        tx: &mut Transaction,
-        inputs: &[TxInput],
-        txin_script: &ScriptBuf,
-        transaction_type: TransactionType,
-    ) -> OrdResult<()> {
-        let ctx = secp256k1::Secp256k1::new();
-
-        let mut hash = SighashCache::new(tx.clone());
-        for (index, input) in inputs.iter().enumerate() {
-            let signature_hash = match transaction_type {
-                TransactionType::Commit => hash.p2wpkh_signature_hash(
-                    index,
-                    txin_script,
-                    input.amount,
-                    bitcoin::EcdsaSighashType::All,
-                )?,
-                TransactionType::Reveal => hash.p2wsh_signature_hash(
-                    index,
-                    txin_script,
-                    input.amount,
-                    bitcoin::EcdsaSighashType::All,
-                )?,
-            };
-
-            let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
-            let signature = ctx.sign_ecdsa(&message, &self.private_key.inner);
-            debug!("signature: {}", signature.serialize_der());
-
-            let pubkey = self.private_key.inner.public_key(&ctx);
-            // verify signature
-            debug!("verifying signature");
-            ctx.verify_ecdsa(&message, &signature, &pubkey)?;
-            debug!("signature verified");
-            // append witness
-            match transaction_type {
-                TransactionType::Commit => {
-                    self.append_witness_to_input(&mut hash, signature, index, &pubkey, None)?;
-                }
-                TransactionType::Reveal => {
-                    self.append_witness_to_input(
-                        &mut hash,
-                        signature,
-                        index,
-                        &pubkey,
-                        Some(txin_script),
-                    )?;
-                }
-            }
-        }
-
-        *tx = hash.into_transaction();
-
-        Ok(())
-    }
-
-    fn append_witness_to_input(
-        &self,
-        sighasher: &mut SighashCache<Transaction>,
-        signature: Signature,
-        index: usize,
-        pubkey: &bitcoin::secp256k1::PublicKey,
-        redeem_script: Option<&ScriptBuf>,
-    ) -> OrdResult<()> {
-        // push redeem script if necessary
-        let witness = if let Some(redeem_script) = redeem_script {
-            let mut witness = Witness::new();
-            witness.push_ecdsa_signature(&bitcoin::ecdsa::Signature::sighash_all(signature));
-            witness.push(redeem_script.as_bytes());
-            witness
-        } else {
-            // otherwise, push pubkey
-            Witness::p2wpkh(&bitcoin::ecdsa::Signature::sighash_all(signature), pubkey)
-        };
-        debug!("witness: {witness:?}");
-
-        // append witness
-        *sighasher
-            .witness_mut(index)
-            .ok_or(OrdError::InputNotFound(index))? = witness;
-
-        Ok(())
     }
 }
 
