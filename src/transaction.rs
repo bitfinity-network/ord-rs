@@ -330,8 +330,6 @@ mod test {
             .build_commit_transaction(commit_transaction_args)
             .unwrap();
 
-        println!("tx_result: {:?}", tx_result);
-
         assert!(builder.taproot_payload.is_none());
 
         let witness = tx_result.tx.input[0].witness.clone().to_vec();
@@ -365,8 +363,6 @@ mod test {
         assert_eq!(tx_result.tx.output.len(), 2);
         assert_eq!(tx_result.tx.output[0].value, Amount::from_sat(5_033));
         assert_eq!(tx_result.tx.output[1].value, Amount::from_sat(467));
-
-        println!("{}", tx_result.redeem_script);
 
         let tx_id = tx_result.tx.txid();
         let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
@@ -408,8 +404,8 @@ mod test {
     #[test]
     fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
         // this test refers to these testnet transactions, commit and reveal:
-        // <https://mempool.space/testnet/tx/???>
-        // <https://mempool.space/testnet/tx/???>
+        // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
+        // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
         // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
         let private_key = PrivateKey::from_wif(WIF).unwrap();
         let public_key = private_key.public_key(&Secp256k1::new());
@@ -436,14 +432,14 @@ mod test {
             .build_commit_transaction(commit_transaction_args)
             .unwrap();
 
-        //println!("tx_result: {:?}", tx_result);
-
         assert!(builder.taproot_payload.is_some());
 
         let witness = tx_result.tx.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 2);
-
-        // TODO: check witness
+        assert_eq!(
+            witness[1],
+            hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
+        );
 
         let encoded_pubkey = builder
             .taproot_payload
@@ -481,10 +477,5 @@ mod test {
 
         let witness = reveal_transaction.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 3);
-        //assert_eq!(
-        //    witness[1],
-        //    hex!("2102d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240ac0063036f7264010118746578742f706c61696e3b636861727365743d7574662d3800387b226f70223a227472616e73666572222c2270223a226272632d3230222c227469636b223a226d6f6e61222c22616d74223a22313030227d68")
-        //);
-        // TODO: check witness
     }
 }
