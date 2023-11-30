@@ -1,4 +1,5 @@
 mod signer;
+mod taproot;
 
 use bitcoin::absolute::LockTime;
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
@@ -6,28 +7,22 @@ use bitcoin::opcodes::{OP_0, OP_FALSE};
 use bitcoin::script::Builder as ScriptBuilder;
 use bitcoin::transaction::Version;
 use bitcoin::{
-    Address, Amount, OutPoint, PrivateKey, PublicKey, ScriptBuf, Sequence, Transaction, TxIn,
-    TxOut, Txid, Witness,
+    secp256k1, Address, Amount, OutPoint, PrivateKey, PublicKey, ScriptBuf, Sequence, Transaction,
+    TxIn, TxOut, Txid, Witness,
 };
 
 use self::signer::Signer;
+use self::taproot::TaprootPayload;
 use crate::inscription::Inscription;
 use crate::utils::bytes_to_push_bytes;
 use crate::{OrdError, OrdResult};
 
 const POSTAGE: u64 = 333;
 
-/// Type of the transaction to sign
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TransactionType {
-    Commit,
-    Reveal,
-}
-
 /// Type of the script to use. Both are supported, but P2WSH may not be supported by all the indexers
 /// So P2TR is preferred
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScriptType {
+enum ScriptType {
     P2WSH,
     P2TR,
 }
@@ -37,6 +32,8 @@ pub struct OrdTransactionBuilder {
     private_key: PrivateKey,
     public_key: PublicKey,
     script_type: ScriptType,
+    /// used to sign the reveal transaction when using P2TR
+    taproot_payload: Option<TaprootPayload>,
 }
 
 #[derive(Debug)]
@@ -80,30 +77,38 @@ pub struct RevealTransactionArgs {
 }
 
 impl OrdTransactionBuilder {
-    /// Initialize a new OrdTransactionBuilder with the given private key and the script type to use
-    pub fn new(private_key: PrivateKey, script_type: ScriptType) -> Self {
+    /// Initialize a new OrdTransactionBuilder with the given private key and use P2TR as script type (preferred)
+    pub fn p2tr(private_key: PrivateKey) -> Self {
+        Self::new(private_key, ScriptType::P2TR)
+    }
+
+    /// Initialize a new OrdTransactionBuilder with the given private key and use P2WSH as script type.
+    /// P2WSH may not be supported by all the indexers, so should be preferred
+    pub fn p2wsh(private_key: PrivateKey) -> Self {
+        Self::new(private_key, ScriptType::P2WSH)
+    }
+
+    fn new(private_key: PrivateKey, script_type: ScriptType) -> Self {
         let public_key = private_key.public_key(&bitcoin::secp256k1::Secp256k1::new());
         Self {
             private_key,
             public_key,
             script_type,
+            taproot_payload: None,
         }
     }
 
     /// Create the commit transaction
     pub fn build_commit_transaction<T>(
-        &self,
+        &mut self,
         args: CreateCommitTransactionArgs<T>,
     ) -> OrdResult<CreateCommitTransaction>
     where
         T: Inscription,
     {
-        // get p2wsh address for output of inscription
-        let redeem_script = self.generate_redeem_script(&args.inscription)?;
-        debug!("redeem_script: {redeem_script}");
-        let script_output_address = Address::p2wsh(&redeem_script, self.private_key.network);
-        debug!("script_output_address: {script_output_address}");
+        let secp_ctx = secp256k1::Secp256k1::new();
 
+        // calc balance
         // exceeding amount of transaction to send to leftovers recipient
         let leftover_amount = args
             .inputs
@@ -118,6 +123,27 @@ impl OrdTransactionBuilder {
 
         let reveal_balance = POSTAGE + args.reveal_fee;
         debug!("reveal_balance: {reveal_balance}");
+
+        // get p2wsh or p2tr address for output of inscription
+        let redeem_script = self.generate_redeem_script(&args.inscription)?;
+        debug!("redeem_script: {redeem_script}");
+        let script_output_address = match self.script_type {
+            ScriptType::P2WSH => Address::p2wsh(&redeem_script, self.private_key.network),
+            ScriptType::P2TR => {
+                let taproot_payload = TaprootPayload::build(
+                    &secp_ctx,
+                    &self.private_key.inner,
+                    &redeem_script,
+                    reveal_balance,
+                    self.private_key.network,
+                )?;
+
+                let address = taproot_payload.address.clone();
+                self.taproot_payload = Some(taproot_payload);
+                address
+            }
+        };
+        debug!("script_output_address: {script_output_address}");
 
         let tx_out = vec![
             TxOut {
@@ -146,7 +172,7 @@ impl OrdTransactionBuilder {
             .collect();
 
         // make transaction and sign it
-        let mut tx = Transaction {
+        let unsigned_tx = Transaction {
             version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: tx_in,
@@ -154,8 +180,8 @@ impl OrdTransactionBuilder {
         };
 
         // sign transaction and update witness
-        let mut signer = Signer::new(&self.private_key, self.script_type, &mut tx);
-        signer.sign_commit_transaction(&args.inputs, &args.txin_script_pubkey)?;
+        let mut signer = Signer::new(&self.private_key, &secp_ctx, unsigned_tx);
+        let tx = signer.sign_commit_transaction(&args.inputs, &args.txin_script_pubkey)?;
 
         Ok(CreateCommitTransaction {
             tx,
@@ -185,14 +211,20 @@ impl OrdTransactionBuilder {
         }];
 
         // make transaction and sign it
-        let mut tx = Transaction {
+        let unsigned_tx = Transaction {
             version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: tx_in,
             output: tx_out,
         };
-        let mut signer = Signer::new(&self.private_key, self.script_type, &mut tx);
-        signer.sign_reveal_transaction(&args.input, &args.redeem_script)?;
+        let secp_ctx = secp256k1::Secp256k1::new();
+        let mut signer = Signer::new(&self.private_key, &secp_ctx, unsigned_tx);
+        let tx = match self.taproot_payload.as_ref() {
+            Some(taproot_payload) => {
+                signer.sign_reveal_transaction_schnorr(taproot_payload, &args.redeem_script)
+            }
+            None => signer.sign_reveal_transaction_ecdsa(&args.input, &args.redeem_script),
+        }?;
 
         Ok(tx)
     }
@@ -248,7 +280,7 @@ mod test {
         let public_key = private_key.public_key(&Secp256k1::new());
         let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
 
-        let builder = OrdTransactionBuilder::new(private_key, ScriptType::P2WSH);
+        let mut builder = OrdTransactionBuilder::p2wsh(private_key);
 
         let commit_transaction_args = CreateCommitTransactionArgs {
             inputs: vec![TxInput {
@@ -270,6 +302,8 @@ mod test {
             .unwrap();
 
         println!("tx_result: {:?}", tx_result);
+
+        assert!(builder.taproot_payload.is_none());
 
         let witness = tx_result.tx.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 2);
@@ -333,5 +367,71 @@ mod test {
             reveal_transaction.output[0].script_pubkey,
             recipient_address.script_pubkey()
         );
+    }
+
+    #[test]
+    fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
+        // this test refers to these testnet transactions, commit and reveal:
+        // <https://mempool.space/testnet/tx/???>
+        // <https://mempool.space/testnet/tx/???>
+        // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
+        let private_key = PrivateKey::from_wif(WIF).unwrap();
+        let public_key = private_key.public_key(&Secp256k1::new());
+        let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
+
+        let mut builder = OrdTransactionBuilder::p2tr(private_key);
+
+        let commit_transaction_args = CreateCommitTransactionArgs {
+            inputs: vec![TxInput {
+                id: Txid::from_str(
+                    "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
+                )
+                .unwrap(), // the transaction that funded our walle
+                index: 1,
+                amount: Amount::from_sat(8_000),
+            }],
+            txin_script_pubkey: address.script_pubkey(),
+            inscription: Brc20::transfer("mona".to_string(), 100),
+            leftovers_recipient: address.clone(),
+            commit_fee: 2_500,
+            reveal_fee: 4_700,
+        };
+        let tx_result = builder
+            .build_commit_transaction(commit_transaction_args)
+            .unwrap();
+
+        println!("tx_result: {:?}", tx_result);
+
+        assert!(builder.taproot_payload.is_some());
+        let witness = tx_result.tx.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 2);
+
+        // TODO: check witness
+
+        let tx_id = tx_result.tx.txid();
+        let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
+
+        let reveal_transaction = builder
+            .build_reveal_transaction(RevealTransactionArgs {
+                input: TxInput {
+                    id: tx_id,
+                    index: 0,
+                    amount: tx_result.reveal_balance,
+                },
+                recipient_address: recipient_address.clone(),
+                redeem_script: tx_result.redeem_script,
+            })
+            .unwrap();
+
+        let witness = reveal_transaction.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 3);
+        assert_eq!(
+            witness[1],
+            hex!("2102d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240ac0063036f7264010118746578742f706c61696e3b636861727365743d7574662d3800387b226f70223a227472616e73666572222c2270223a226272632d3230222c227469636b223a226d6f6e61222c22616d74223a22313030227d68")
+        );
+        // TODO: check witness
     }
 }

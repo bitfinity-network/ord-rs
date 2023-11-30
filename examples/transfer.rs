@@ -7,7 +7,7 @@ use bitcoin::{Address, Amount, Network, PrivateKey, Transaction, Txid};
 use log::{debug, info};
 use ord_rs::brc20::Brc20;
 use ord_rs::transaction::{CreateCommitTransactionArgs, RevealTransactionArgs, TxInput};
-use ord_rs::{OrdTransactionBuilder, ScriptType};
+use ord_rs::OrdTransactionBuilder;
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "Transfer BRC20 tokens")]
@@ -57,11 +57,6 @@ async fn main() -> anyhow::Result<()> {
         "mainnet" | "prod" => Network::Bitcoin,
         _ => panic!("invalid network"),
     };
-    let script_type = match args.script_type.as_str() {
-        "p2tr" | "P2TR" => ScriptType::P2TR,
-        "p2wsh" | "P2WSH" => ScriptType::P2WSH,
-        _ => anyhow::bail!("invalid script type"),
-    };
 
     let recipient = Address::from_str(&args.to)?.require_network(network)?;
     debug!("recipient: {recipient}");
@@ -81,7 +76,12 @@ async fn main() -> anyhow::Result<()> {
     let inputs = sats_amount_from_tx_inputs(&inputs, network).await?;
 
     debug!("getting commit transaction...");
-    let builder = OrdTransactionBuilder::new(private_key, script_type);
+    let mut builder = match args.script_type.as_str() {
+        "p2tr" | "P2TR" => OrdTransactionBuilder::p2tr(private_key),
+        "p2wsh" | "P2WSH" => OrdTransactionBuilder::p2wsh(private_key),
+        _ => panic!("invalid script type"),
+    };
+
     let commit_tx = builder.build_commit_transaction(CreateCommitTransactionArgs {
         inputs,
         inscription: Brc20::transfer(ticker, amount),

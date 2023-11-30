@@ -31,4 +31,4 @@ pub use bitcoin;
 pub use error::OrdError;
 pub use inscription::Inscription;
 pub use result::OrdResult;
-pub use transaction::{OrdTransactionBuilder, ScriptType};
+pub use transaction::OrdTransactionBuilder;
