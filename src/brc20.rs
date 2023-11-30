@@ -1,15 +1,18 @@
 use std::str::FromStr;
 
+use bitcoin::script::PushBytesBuf;
 use serde_with::{serde_as, DisplayFromStr};
 
-use crate::{Brc20Error, Brc20Result};
+use crate::inscription::Inscription;
+use crate::utils::bytes_to_push_bytes;
+use crate::{OrdError, OrdResult};
 
 const PROTOCOL: &str = "brc-20";
 
 /// BRC-20 operation
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op")]
-pub enum Brc20Op {
+pub enum Brc20 {
     /// Deploy a BRC-20 token
     #[serde(rename = "deploy")]
     Deploy(Brc20Deploy),
@@ -21,7 +24,7 @@ pub enum Brc20Op {
     Transfer(Brc20Transfer),
 }
 
-impl Brc20Op {
+impl Brc20 {
     /// Create a new BRC-20 deploy operation
     pub fn deploy(tick: impl ToString, max: u64, lim: Option<u64>, dec: Option<u64>) -> Self {
         Self::Deploy(Brc20Deploy {
@@ -52,16 +55,26 @@ impl Brc20Op {
     }
 
     /// Encode the BRC-20 operation as a JSON string
-    pub fn encode(&self) -> Brc20Result<String> {
-        serde_json::to_string(self).map_err(Brc20Error::from)
+    pub fn encode(&self) -> OrdResult<String> {
+        serde_json::to_string(self).map_err(OrdError::from)
     }
 }
 
-impl FromStr for Brc20Op {
-    type Err = Brc20Error;
+impl FromStr for Brc20 {
+    type Err = OrdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s).map_err(Brc20Error::from)
+        serde_json::from_str(s).map_err(OrdError::from)
+    }
+}
+
+impl Inscription for Brc20 {
+    fn content_type(&self) -> String {
+        "text/plain;charset=utf-8".to_string()
+    }
+
+    fn data(&self) -> OrdResult<PushBytesBuf> {
+        bytes_to_push_bytes(self.encode()?.as_bytes())
     }
 }
 
@@ -108,7 +121,7 @@ mod test {
 
     #[test]
     fn test_should_decode_deploy() {
-        let deploy: Brc20Op = serde_json::from_str(
+        let deploy: Brc20 = serde_json::from_str(
             r#"
             { 
                 "p": "brc-20",
@@ -124,7 +137,7 @@ mod test {
 
         assert_eq!(
             deploy,
-            Brc20Op::Deploy(Brc20Deploy {
+            Brc20::Deploy(Brc20Deploy {
                 protocol: "brc-20".to_string(),
                 tick: "ordi".to_string(),
                 max: 21000000,
@@ -133,7 +146,7 @@ mod test {
             })
         );
 
-        let deploy: Brc20Op = serde_json::from_str(
+        let deploy: Brc20 = serde_json::from_str(
             r#"
             { 
                 "p": "brc-20",
@@ -147,7 +160,7 @@ mod test {
 
         assert_eq!(
             deploy,
-            Brc20Op::Deploy(Brc20Deploy {
+            Brc20::Deploy(Brc20Deploy {
                 protocol: "brc-20".to_string(),
                 tick: "ordi".to_string(),
                 max: 21000000,
@@ -159,7 +172,7 @@ mod test {
 
     #[test]
     fn test_should_decode_mint() {
-        let mint: Brc20Op = serde_json::from_str(
+        let mint: Brc20 = serde_json::from_str(
             r#"
             { 
                 "p": "brc-20",
@@ -172,7 +185,7 @@ mod test {
         .unwrap();
         assert_eq!(
             mint,
-            Brc20Op::Mint(Brc20Mint {
+            Brc20::Mint(Brc20Mint {
                 protocol: "brc-20".to_string(),
                 tick: "ordi".to_string(),
                 amt: 1000
@@ -182,7 +195,7 @@ mod test {
 
     #[test]
     fn test_should_decode_transfer() {
-        let transfer: Brc20Op = serde_json::from_str(
+        let transfer: Brc20 = serde_json::from_str(
             r#"{ 
                 "p": "brc-20",
                 "op": "transfer",
@@ -194,7 +207,7 @@ mod test {
         .unwrap();
         assert_eq!(
             transfer,
-            Brc20Op::Transfer(Brc20Transfer {
+            Brc20::Transfer(Brc20Transfer {
                 protocol: "brc-20".to_string(),
                 tick: "ordi".to_string(),
                 amt: 100
@@ -204,7 +217,7 @@ mod test {
 
     #[test]
     fn test_should_encode_and_decode() {
-        let op = Brc20Op::Transfer(Brc20Transfer {
+        let op = Brc20::Transfer(Brc20Transfer {
             protocol: "brc-20".to_string(),
             tick: "ordi".to_string(),
             amt: 100,
@@ -212,6 +225,6 @@ mod test {
 
         let s = op.encode().unwrap();
 
-        assert_eq!(Brc20Op::from_str(&s).unwrap(), op);
+        assert_eq!(Brc20::from_str(&s).unwrap(), op);
     }
 }

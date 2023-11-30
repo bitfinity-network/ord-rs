@@ -1,3 +1,3 @@
-use crate::Brc20Error;
+use crate::OrdError;
 
-pub type Brc20Result<T> = std::result::Result<T, Brc20Error>;
+pub type OrdResult<T> = std::result::Result<T, OrdError>;

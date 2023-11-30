@@ -11,8 +11,9 @@ use bitcoin::{
     TxIn, TxOut, Txid, Witness,
 };
 
+use crate::inscription::Inscription;
 use crate::utils::bytes_to_push_bytes;
-use crate::{Brc20Error, Brc20Op, Brc20Result};
+use crate::{OrdError, OrdResult};
 
 const POSTAGE: u64 = 333;
 
@@ -29,11 +30,14 @@ pub struct Brc20TransactionBuilder {
 
 #[derive(Debug)]
 /// Arguments for creating a commit transaction
-pub struct CreateCommitTransactionArgs {
+pub struct CreateCommitTransactionArgs<T>
+where
+    T: Inscription,
+{
     /// Inputs of the transaction
     pub inputs: Vec<TxInput>,
     /// Inscription to write
-    pub inscription: Brc20Op,
+    pub inscription: T,
     /// Address to send the leftovers BTC of the trasnsaction
     pub leftovers_recipient: Address,
     /// Fee to pay for the commit transaction
@@ -74,10 +78,13 @@ impl Brc20TransactionBuilder {
     }
 
     /// Create the commit transaction
-    pub fn build_commit_transaction(
+    pub fn build_commit_transaction<T>(
         &self,
-        args: CreateCommitTransactionArgs,
-    ) -> Brc20Result<CreateCommitTransaction> {
+        args: CreateCommitTransactionArgs<T>,
+    ) -> OrdResult<CreateCommitTransaction>
+    where
+        T: Inscription,
+    {
         // get p2wsh address for output of inscription
         let redeem_script = self.generate_redeem_script(&args.inscription)?;
         debug!("redeem_script: {redeem_script}");
@@ -93,7 +100,7 @@ impl Brc20TransactionBuilder {
             .checked_sub(POSTAGE)
             .and_then(|v| v.checked_sub(args.commit_fee))
             .and_then(|v| v.checked_sub(args.reveal_fee))
-            .ok_or(Brc20Error::InsufficientBalance)?;
+            .ok_or(OrdError::InsufficientBalance)?;
         debug!("leftover_amount: {leftover_amount}");
 
         let reveal_balance = POSTAGE + args.reveal_fee;
@@ -149,10 +156,7 @@ impl Brc20TransactionBuilder {
     }
 
     /// Create the reveal transaction
-    pub fn build_reveal_transaction(
-        &self,
-        args: RevealTransactionArgs,
-    ) -> Brc20Result<Transaction> {
+    pub fn build_reveal_transaction(&self, args: RevealTransactionArgs) -> OrdResult<Transaction> {
         // previous output
         let previous_output = OutPoint {
             txid: args.input.id,
@@ -189,19 +193,20 @@ impl Brc20TransactionBuilder {
     }
 
     /// Generate redeem script from private key and inscription
-    fn generate_redeem_script(&self, inscription: &Brc20Op) -> Brc20Result<ScriptBuf> {
-        let encoded_inscription = bytes_to_push_bytes(inscription.encode()?.as_bytes())?;
-
+    fn generate_redeem_script<T>(&self, inscription: &T) -> OrdResult<ScriptBuf>
+    where
+        T: Inscription,
+    {
         Ok(ScriptBuilder::new()
             .push_key(&self.public_key)
             .push_opcode(OP_CHECKSIG)
             .push_opcode(OP_FALSE)
             .push_opcode(OP_IF)
             .push_slice(b"ord")
-            .push_slice(bytes_to_push_bytes(&[0x01])?.as_push_bytes())
-            .push_slice(b"text/plain;charset=utf-8") // NOTE: YES, IT'S CORRECT, DON'T ASK!!! It's not json for some reasons
+            .push_slice(b"\x01")
+            .push_slice(bytes_to_push_bytes(inscription.content_type().as_bytes())?.as_push_bytes())
             .push_opcode(OP_0)
-            .push_slice(encoded_inscription.as_push_bytes())
+            .push_slice(inscription.data()?.as_push_bytes())
             .push_opcode(OP_ENDIF)
             .into_script())
     }
@@ -213,7 +218,7 @@ impl Brc20TransactionBuilder {
         inputs: &[TxInput],
         txin_script: &ScriptBuf,
         transaction_type: TransactionType,
-    ) -> Brc20Result<()> {
+    ) -> OrdResult<()> {
         let ctx = secp256k1::Secp256k1::new();
 
         let mut hash = SighashCache::new(tx.clone());
@@ -271,7 +276,7 @@ impl Brc20TransactionBuilder {
         index: usize,
         pubkey: &bitcoin::secp256k1::PublicKey,
         redeem_script: Option<&ScriptBuf>,
-    ) -> Brc20Result<()> {
+    ) -> OrdResult<()> {
         // push redeem script if necessary
         let witness = if let Some(redeem_script) = redeem_script {
             let mut witness = Witness::new();
@@ -287,7 +292,7 @@ impl Brc20TransactionBuilder {
         // append witness
         *sighasher
             .witness_mut(index)
-            .ok_or(Brc20Error::InputNotFound(index))? = witness;
+            .ok_or(OrdError::InputNotFound(index))? = witness;
 
         Ok(())
     }
@@ -316,7 +321,7 @@ mod test {
     use hex_literal::hex;
 
     use super::*;
-    use crate::Brc20Op;
+    use crate::brc20::Brc20;
 
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
@@ -342,7 +347,7 @@ mod test {
                 amount: Amount::from_sat(8_000),
             }],
             txin_script_pubkey: address.script_pubkey(),
-            inscription: Brc20Op::transfer("mona".to_string(), 100),
+            inscription: Brc20::transfer("mona".to_string(), 100),
             leftovers_recipient: address.clone(),
             commit_fee: 2_500,
             reveal_fee: 4_700,

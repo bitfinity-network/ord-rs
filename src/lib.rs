@@ -1,4 +1,4 @@
-//! # BRC20
+//! # ord-rs
 //!
 //! # Get started
 //!
@@ -20,14 +20,15 @@ extern crate log;
 extern crate serde;
 
 mod error;
-mod op;
+mod inscription;
 mod result;
 mod utils;
 
+pub mod brc20;
 pub mod transaction;
 
 pub use bitcoin;
-pub use error::Brc20Error;
-pub use op::{Brc20Deploy, Brc20Mint, Brc20Op, Brc20Transfer};
-pub use result::Brc20Result;
+pub use error::OrdError;
+pub use inscription::Inscription;
+pub use result::OrdResult;
 pub use transaction::Brc20TransactionBuilder;
