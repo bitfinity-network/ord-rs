@@ -18,15 +18,12 @@ impl TaprootPayload {
     /// Build a taproot payload and get T2PR address
     pub fn build(
         secp: &Secp256k1<All>,
-        secret_key: &SecretKey,
+        keypair: UntweakedKeypair,
+        x_public_key: XOnlyPublicKey,
         redeem_script: &ScriptBuf,
         reveal_balance: u64,
         network: Network,
     ) -> OrdResult<Self> {
-        // FIXME: maybe it should be random?
-        let keypair = UntweakedKeypair::from_secret_key(secp, secret_key);
-        let x_public_key = XOnlyPublicKey::from_keypair(&keypair).0;
-
         let taproot_spend_info = TaprootBuilder::new()
             .add_leaf(0, redeem_script.clone())
             .expect("adding leaf should work")
@@ -49,4 +46,13 @@ impl TaprootPayload {
             address,
         })
     }
+}
+
+pub fn generate_keypair(
+    secp: &Secp256k1<All>,
+    secret: &SecretKey,
+) -> (UntweakedKeypair, XOnlyPublicKey) {
+    let keypair = UntweakedKeypair::from_secret_key(secp, secret);
+    let x_public_key = XOnlyPublicKey::from_keypair(&keypair).0;
+    (keypair, x_public_key)
 }

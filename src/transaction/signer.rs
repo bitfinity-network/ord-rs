@@ -1,9 +1,10 @@
 use bitcoin::hashes::Hash as _;
-use bitcoin::key::TapTweak as _;
 use bitcoin::secp256k1::{All, Secp256k1};
 use bitcoin::sighash::{Prevouts, SighashCache};
-use bitcoin::taproot::ControlBlock;
-use bitcoin::{secp256k1, PrivateKey, ScriptBuf, TapSighashType, Transaction, Witness};
+use bitcoin::taproot::{ControlBlock, LeafVersion};
+use bitcoin::{
+    secp256k1, PrivateKey, ScriptBuf, TapLeafHash, TapSighashType, Transaction, Witness,
+};
 
 use super::taproot::TaprootPayload;
 use super::TxInput;
@@ -77,34 +78,32 @@ impl<'a> Signer<'a> {
         taproot: &TaprootPayload,
         redeem_script: &ScriptBuf,
     ) -> OrdResult<Transaction> {
-        let prevouts = Prevouts::One(0, &taproot.prevouts);
+        let prevouts_array = vec![taproot.prevouts.clone()];
+        let prevouts = Prevouts::All(&prevouts_array);
 
-        let mut hash = SighashCache::new(self.transaction.clone());
-        let sighash_sig = SighashCache::new(self.transaction.clone())
-            .taproot_key_spend_signature_hash(0, &prevouts, TapSighashType::AllPlusAnyoneCanPay)?;
-
-        let tweak_key_pair = taproot
-            .keypair
-            .tap_tweak(self.secp, taproot.taproot_spend_info.merkle_root());
+        let mut sighash_cache = SighashCache::new(self.transaction.clone());
+        let sighash_sig = sighash_cache.taproot_script_spend_signature_hash(
+            0,
+            &prevouts,
+            TapLeafHash::from_script(redeem_script, LeafVersion::TapScript),
+            TapSighashType::Default,
+        )?;
 
         let msg = secp256k1::Message::from_digest(sighash_sig.to_byte_array());
-
-        let sig = self
-            .secp
-            .sign_schnorr_no_aux_rand(&msg, &tweak_key_pair.to_inner());
+        let sig = self.secp.sign_schnorr_no_aux_rand(&msg, &taproot.keypair);
 
         // verify
         self.secp
-            .verify_schnorr(&sig, &msg, &tweak_key_pair.to_inner().x_only_public_key().0)?;
+            .verify_schnorr(&sig, &msg, &taproot.keypair.x_only_public_key().0)?;
 
         // append witness
         let signature = bitcoin::taproot::Signature {
             sig,
-            hash_ty: TapSighashType::AllPlusAnyoneCanPay,
+            hash_ty: TapSighashType::Default,
         }
         .into();
         self.append_witness_to_input(
-            &mut hash,
+            &mut sighash_cache,
             signature,
             0,
             &taproot.keypair.public_key(),
@@ -112,7 +111,7 @@ impl<'a> Signer<'a> {
             Some(&taproot.control_block),
         )?;
 
-        Ok(hash.into_transaction())
+        Ok(sighash_cache.into_transaction())
     }
 
     fn sign(

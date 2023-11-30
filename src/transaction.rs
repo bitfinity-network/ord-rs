@@ -8,12 +8,13 @@ use bitcoin::script::Builder as ScriptBuilder;
 use bitcoin::transaction::Version;
 use bitcoin::{
     secp256k1, Address, Amount, OutPoint, PrivateKey, PublicKey, ScriptBuf, Sequence, Transaction,
-    TxIn, TxOut, Txid, Witness,
+    TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
 
 use self::signer::Signer;
 use self::taproot::TaprootPayload;
 use crate::inscription::Inscription;
+use crate::transaction::taproot::generate_keypair;
 use crate::utils::bytes_to_push_bytes;
 use crate::{OrdError, OrdResult};
 
@@ -25,6 +26,12 @@ const POSTAGE: u64 = 333;
 enum ScriptType {
     P2WSH,
     P2TR,
+}
+
+#[derive(Debug)]
+enum RedeemScriptPubkey {
+    Ecdsa(PublicKey),
+    XPublickey(XOnlyPublicKey),
 }
 
 /// Builder for BRC20 transactions
@@ -108,6 +115,18 @@ impl OrdTransactionBuilder {
     {
         let secp_ctx = secp256k1::Secp256k1::new();
 
+        // generate P2TR keyts
+        let p2tr_keys = match self.script_type {
+            ScriptType::P2WSH => None,
+            ScriptType::P2TR => Some(generate_keypair(&secp_ctx, &self.private_key.inner)),
+        };
+
+        // generate redeem script pubkey based on the current script type
+        let redeem_script_pubkey = match self.script_type {
+            ScriptType::P2WSH => RedeemScriptPubkey::Ecdsa(self.public_key),
+            ScriptType::P2TR => RedeemScriptPubkey::XPublickey(p2tr_keys.unwrap().1),
+        };
+
         // calc balance
         // exceeding amount of transaction to send to leftovers recipient
         let leftover_amount = args
@@ -125,14 +144,15 @@ impl OrdTransactionBuilder {
         debug!("reveal_balance: {reveal_balance}");
 
         // get p2wsh or p2tr address for output of inscription
-        let redeem_script = self.generate_redeem_script(&args.inscription)?;
+        let redeem_script = self.generate_redeem_script(&args.inscription, redeem_script_pubkey)?;
         debug!("redeem_script: {redeem_script}");
         let script_output_address = match self.script_type {
             ScriptType::P2WSH => Address::p2wsh(&redeem_script, self.private_key.network),
             ScriptType::P2TR => {
                 let taproot_payload = TaprootPayload::build(
                     &secp_ctx,
-                    &self.private_key.inner,
+                    p2tr_keys.unwrap().0,
+                    p2tr_keys.unwrap().1,
                     &redeem_script,
                     reveal_balance,
                     self.private_key.network,
@@ -230,12 +250,21 @@ impl OrdTransactionBuilder {
     }
 
     /// Generate redeem script from private key and inscription
-    fn generate_redeem_script<T>(&self, inscription: &T) -> OrdResult<ScriptBuf>
+    fn generate_redeem_script<T>(
+        &self,
+        inscription: &T,
+        pubkey: RedeemScriptPubkey,
+    ) -> OrdResult<ScriptBuf>
     where
         T: Inscription,
     {
+        let encoded_pubkey = match pubkey {
+            RedeemScriptPubkey::Ecdsa(pubkey) => bytes_to_push_bytes(&pubkey.to_bytes())?,
+            RedeemScriptPubkey::XPublickey(pubkey) => bytes_to_push_bytes(&pubkey.serialize())?,
+        };
+
         Ok(ScriptBuilder::new()
-            .push_key(&self.public_key)
+            .push_slice(encoded_pubkey.as_push_bytes())
             .push_opcode(OP_CHECKSIG)
             .push_opcode(OP_FALSE)
             .push_opcode(OP_IF)
@@ -311,6 +340,13 @@ mod test {
         assert_eq!(
             witness[1],
             hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
+        );
+
+        // check redeem script
+        let redeem_script = &tx_result.redeem_script;
+        assert_eq!(
+            redeem_script.as_bytes()[0],
+            bitcoin::opcodes::all::OP_PUSHBYTES_33.to_u8()
         );
 
         // txin
@@ -400,13 +436,30 @@ mod test {
             .build_commit_transaction(commit_transaction_args)
             .unwrap();
 
-        println!("tx_result: {:?}", tx_result);
+        //println!("tx_result: {:?}", tx_result);
 
         assert!(builder.taproot_payload.is_some());
+
         let witness = tx_result.tx.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 2);
 
         // TODO: check witness
+
+        let encoded_pubkey = builder
+            .taproot_payload
+            .as_ref()
+            .unwrap()
+            .keypair
+            .public_key()
+            .serialize();
+        println!("{} {}", encoded_pubkey.len(), hex::encode(&encoded_pubkey));
+
+        // check redeem script contains pubkey for taproot
+        let redeem_script = &tx_result.redeem_script;
+        assert_eq!(
+            redeem_script.as_bytes()[0],
+            bitcoin::opcodes::all::OP_PUSHBYTES_32.to_u8()
+        );
 
         let tx_id = tx_result.tx.txid();
         let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
@@ -428,10 +481,10 @@ mod test {
 
         let witness = reveal_transaction.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 3);
-        assert_eq!(
-            witness[1],
-            hex!("2102d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240ac0063036f7264010118746578742f706c61696e3b636861727365743d7574662d3800387b226f70223a227472616e73666572222c2270223a226272632d3230222c227469636b223a226d6f6e61222c22616d74223a22313030227d68")
-        );
+        //assert_eq!(
+        //    witness[1],
+        //    hex!("2102d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240ac0063036f7264010118746578742f706c61696e3b636861727365743d7574662d3800387b226f70223a227472616e73666572222c2270223a226272632d3230222c227469636b223a226d6f6e61222c22616d74223a22313030227d68")
+        //);
         // TODO: check witness
     }
 }

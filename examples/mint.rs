@@ -110,12 +110,11 @@ async fn main() -> anyhow::Result<()> {
         // wait for commit transaction to be confirmed
         loop {
             info!("waiting for commit transaction to be confirmed...");
+            tokio::time::sleep(Duration::from_secs(10)).await;
             if get_tx_by_hash(&commit_txid, network).await.is_ok() {
                 break;
             }
-
-            debug!("retrying in 30 seconds...");
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            debug!("retrying in 10 seconds...");
         }
 
         info!(
