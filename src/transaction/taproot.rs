@@ -1,5 +1,5 @@
 use bitcoin::key::UntweakedKeypair;
-use bitcoin::secp256k1::{All, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{All, Secp256k1};
 use bitcoin::taproot::{ControlBlock, LeafVersion, TaprootBuilder, TaprootSpendInfo};
 use bitcoin::{Address, Amount, Network, ScriptBuf, TxOut, XOnlyPublicKey};
 
@@ -48,11 +48,8 @@ impl TaprootPayload {
     }
 }
 
-pub fn generate_keypair(
-    secp: &Secp256k1<All>,
-    secret: &SecretKey,
-) -> (UntweakedKeypair, XOnlyPublicKey) {
-    let keypair = UntweakedKeypair::from_secret_key(secp, secret);
+pub fn generate_keypair(secp: &Secp256k1<All>) -> (UntweakedKeypair, XOnlyPublicKey) {
+    let keypair = UntweakedKeypair::new(secp, &mut rand::thread_rng());
     let x_public_key = XOnlyPublicKey::from_keypair(&keypair).0;
     (keypair, x_public_key)
 }

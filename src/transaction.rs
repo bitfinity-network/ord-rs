@@ -56,9 +56,9 @@ where
     /// Address to send the leftovers BTC of the trasnsaction
     pub leftovers_recipient: Address,
     /// Fee to pay for the commit transaction
-    pub commit_fee: u64,
+    pub commit_fee: Amount,
     /// Fee to pay for the reveal transaction
-    pub reveal_fee: u64,
+    pub reveal_fee: Amount,
     /// Script pubkey of the inputs
     pub txin_script_pubkey: ScriptBuf,
 }
@@ -118,7 +118,7 @@ impl OrdTransactionBuilder {
         // generate P2TR keyts
         let p2tr_keys = match self.script_type {
             ScriptType::P2WSH => None,
-            ScriptType::P2TR => Some(generate_keypair(&secp_ctx, &self.private_key.inner)),
+            ScriptType::P2TR => Some(generate_keypair(&secp_ctx)),
         };
 
         // generate redeem script pubkey based on the current script type
@@ -135,12 +135,12 @@ impl OrdTransactionBuilder {
             .map(|input| input.amount.to_sat())
             .sum::<u64>()
             .checked_sub(POSTAGE)
-            .and_then(|v| v.checked_sub(args.commit_fee))
-            .and_then(|v| v.checked_sub(args.reveal_fee))
+            .and_then(|v| v.checked_sub(args.commit_fee.to_sat()))
+            .and_then(|v| v.checked_sub(args.reveal_fee.to_sat()))
             .ok_or(OrdError::InsufficientBalance)?;
         debug!("leftover_amount: {leftover_amount}");
 
-        let reveal_balance = POSTAGE + args.reveal_fee;
+        let reveal_balance = POSTAGE + args.reveal_fee.to_sat();
         debug!("reveal_balance: {reveal_balance}");
 
         // get p2wsh or p2tr address for output of inscription
@@ -297,6 +297,7 @@ mod test {
     use super::*;
     use crate::brc20::Brc20;
 
+    // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
     #[test]
@@ -323,8 +324,8 @@ mod test {
             txin_script_pubkey: address.script_pubkey(),
             inscription: Brc20::transfer("mona".to_string(), 100),
             leftovers_recipient: address.clone(),
-            commit_fee: 2_500,
-            reveal_fee: 4_700,
+            commit_fee: Amount::from_sat(2_500),
+            reveal_fee: Amount::from_sat(4_700),
         };
         let tx_result = builder
             .build_commit_transaction(commit_transaction_args)
@@ -425,8 +426,8 @@ mod test {
             txin_script_pubkey: address.script_pubkey(),
             inscription: Brc20::transfer("mona".to_string(), 100),
             leftovers_recipient: address.clone(),
-            commit_fee: 2_500,
-            reveal_fee: 4_700,
+            commit_fee: Amount::from_sat(2_500),
+            reveal_fee: Amount::from_sat(4_700),
         };
         let tx_result = builder
             .build_commit_transaction(commit_transaction_args)
