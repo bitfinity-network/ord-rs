@@ -60,7 +60,7 @@ impl<'a> Signer<'a> {
         inputs: &[TxInput],
         txin_script: &ScriptBuf,
     ) -> OrdResult<Transaction> {
-        self.sign(inputs, txin_script, TransactionType::Commit)
+        self.sign_ecdsa(inputs, txin_script, TransactionType::Commit)
     }
 
     /// Sign the reveal transaction with the given redeem script using ECDSA (for P2WSH)
@@ -69,7 +69,7 @@ impl<'a> Signer<'a> {
         input: &TxInput,
         redeem_script: &ScriptBuf,
     ) -> OrdResult<Transaction> {
-        self.sign(&[input.clone()], redeem_script, TransactionType::Reveal)
+        self.sign_ecdsa(&[input.clone()], redeem_script, TransactionType::Reveal)
     }
 
     /// Sign the reveal transaction with the given redeem script (for P2TR)
@@ -114,7 +114,7 @@ impl<'a> Signer<'a> {
         Ok(sighash_cache.into_transaction())
     }
 
-    fn sign(
+    fn sign_ecdsa(
         &mut self,
         inputs: &[TxInput],
         script: &ScriptBuf,
