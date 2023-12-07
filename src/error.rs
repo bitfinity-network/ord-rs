@@ -15,6 +15,12 @@ pub enum OrdError {
     InsufficientBalance,
     #[error("invalid signature: {0}")]
     Signature(#[from] bitcoin::secp256k1::Error),
+    #[error("invalid signature")]
+    UnexpectedSignature,
+    #[error("taproot builder error: {0}")]
+    TaprootBuilder(#[from] bitcoin::taproot::TaprootBuilderError),
+    #[error("taproot compute error")]
+    TaprootCompute,
     #[error("no transaction inputs")]
     NoInputs,
 }
