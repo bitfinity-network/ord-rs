@@ -84,6 +84,24 @@ The transfer involves two steps actually, let's see an example where Alice sends
 2. Then Alice reveals the inscription in the reveal transaction from the P2TR address to her **source** address.
 3. Finally, Alice sends the UTXO from the reveal transaction to Bob's Address.
 
+### Inscription parsing
+
+In order to parse an inscription you can use the `OrdParser::parse` function, which will use the `parse` function from the `Inscription` trait, for the given Inscription type.
+
+For example, given the transaction `ff314aebaa91a3f10cfba576d3be958127aba982d29146735e612869567e7808` from the testnet, we'll parse a valid `Brc20`.
+
+```rust
+let transaction = get_transaction_by_id(
+    "ff314aebaa91a3f10cfba576d3be958127aba982d29146735e612869567e7808",
+    bitcoin::Network::Testnet,
+)
+.await
+.unwrap();
+
+let inscription: Brc20 = OrdParser::parse(&transaction).unwrap().unwrap();
+assert_eq!(inscription, Brc20::transfer("mona", 100));
+```
+
 ## License
 
 See license in [LICENSE](./LICENSE)
