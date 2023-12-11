@@ -1,6 +1,9 @@
+mod rpc_client;
+
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, PrivateKey};
 use rand::Rng as _;
+pub use rpc_client::get_transaction_by_id;
 
 /// Generate a random P2WPKH BTC address and its private key.
 pub fn generate_btc_address(network: Network) -> (Address, PrivateKey) {

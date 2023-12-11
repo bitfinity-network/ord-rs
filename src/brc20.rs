@@ -5,7 +5,7 @@ use serde_with::{serde_as, DisplayFromStr};
 
 use crate::inscription::Inscription;
 use crate::utils::bytes_to_push_bytes;
-use crate::{OrdError, OrdResult};
+use crate::{InscriptionParseError, OrdError, OrdResult};
 
 const PROTOCOL: &str = "brc-20";
 
@@ -75,6 +75,17 @@ impl Inscription for Brc20 {
 
     fn data(&self) -> OrdResult<PushBytesBuf> {
         bytes_to_push_bytes(self.encode()?.as_bytes())
+    }
+
+    fn parse(data: &[u8]) -> OrdResult<Self>
+    where
+        Self: Sized,
+    {
+        let s = String::from_utf8(data.to_vec())
+            .map_err(|_| OrdError::InscriptionParser(InscriptionParseError::BadDataSyntax))?;
+        let inscription = serde_json::from_str(&s).map_err(OrdError::from)?;
+
+        Ok(inscription)
     }
 }
 

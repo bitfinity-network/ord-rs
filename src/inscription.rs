@@ -28,4 +28,9 @@ pub trait Inscription {
     ///
     /// So for example in case of a BRC20, this function must return the JSON encoded BRC20 operation as `PushBytes`.
     fn data(&self) -> OrdResult<PushBytesBuf>;
+
+    /// Returns the inscription from the redeem script.
+    fn parse(data: &[u8]) -> OrdResult<Self>
+    where
+        Self: Sized;
 }
