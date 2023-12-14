@@ -28,7 +28,7 @@ pub mod brc20;
 pub mod transaction;
 
 pub use bitcoin;
-pub use error::OrdError;
+pub use error::{InscriptionParseError, OrdError};
 pub use inscription::Inscription;
 pub use result::OrdResult;
-pub use transaction::OrdTransactionBuilder;
+pub use transaction::{OrdParser, OrdTransactionBuilder};

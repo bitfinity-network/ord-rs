@@ -21,6 +21,20 @@ pub enum OrdError {
     TaprootBuilder(#[from] bitcoin::taproot::TaprootBuilderError),
     #[error("taproot compute error")]
     TaprootCompute,
+    #[error("scripterror: {0}")]
+    Script(#[from] bitcoin::blockdata::script::Error),
     #[error("no transaction inputs")]
     NoInputs,
+    #[error("inscription parser error: {0}")]
+    InscriptionParser(#[from] InscriptionParseError),
+}
+
+#[derive(Error, Debug)]
+pub enum InscriptionParseError {
+    #[error("unexpected opcode token")]
+    UnexpectedOpcode,
+    #[error("unexpected push bytes token")]
+    UnexpectedPushBytes,
+    #[error("bad data syntax")]
+    BadDataSyntax,
 }
