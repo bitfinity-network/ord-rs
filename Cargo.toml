@@ -11,9 +11,9 @@ edition = "2021"
 
 [dependencies]
 bitcoin = { version = "0.31", features = ["rand"] }
-getrandom = { version = "0.2", features = ["custom"] }
+# getrandom = { version = "0.2", features = ["custom"] }
 log = "0.4"
-rand = { version = "0.8.5", features = ["getrandom"] }
+rand = { version = "0.8.5" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = { version = "3", default-features = false, features = ["macros"] }
