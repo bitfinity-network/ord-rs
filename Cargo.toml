@@ -10,20 +10,14 @@ documentation = "https://docs.rs/ord-rs"
 edition = "2021"
 
 [dependencies]
-log = "0.4"
-
-# rand = { version = "0.8", features = ["std_rng", "small_rng"] }
 bitcoin = { version = "0.31", features = ["rand"] }
 getrandom = { version = "0.2", features = ["custom"] }
+log = "0.4"
 rand = { version = "0.8.5", features = ["getrandom"] }
-
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = { version = "3", default-features = false, features = ["macros"] }
 thiserror = "1"
-
-# [target."cfg(target_arch = \"wasm32\")".dependencies]
-# getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1"
