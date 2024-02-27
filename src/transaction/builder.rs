@@ -448,7 +448,7 @@ mod test {
             .keypair
             .public_key()
             .serialize();
-        println!("{} {}", encoded_pubkey.len(), hex::encode(&encoded_pubkey));
+        println!("{} {}", encoded_pubkey.len(), hex::encode(encoded_pubkey));
 
         // check redeem script contains pubkey for taproot
         let redeem_script = &tx_result.redeem_script;

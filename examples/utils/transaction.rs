@@ -62,7 +62,7 @@ pub fn spend_utxo_transaction(
 
     let tx = sign_transaction(
         unsigned_tx,
-        &private_key,
+        private_key,
         &secp,
         inputs,
         &sender_address.script_pubkey(),
@@ -91,7 +91,7 @@ fn sign_transaction(
         let signature = secp.sign_ecdsa(&message, &private_key.inner);
 
         // verify sig
-        let secp_pubkey = private_key.inner.public_key(&secp);
+        let secp_pubkey = private_key.inner.public_key(secp);
         secp.verify_ecdsa(&message, &signature, &secp_pubkey)?;
         let signature = bitcoin::ecdsa::Signature::sighash_all(signature);
 
