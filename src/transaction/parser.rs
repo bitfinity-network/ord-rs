@@ -97,7 +97,6 @@ impl OrdParser {
                 Ok(i) => i,
                 Err(e) => return Err(e.into()),
             };
-            println!("current state: {parse_state:?}; {instruction:?}");
 
             // validate data
             if !parse_state.validate(&instruction) {

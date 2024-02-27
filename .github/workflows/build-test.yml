@@ -2,9 +2,9 @@ name: build-test
 
 on:
   pull_request:
-    paths-ignore:
-      - "*.md"
   push:
+    branches:
+      - main
     paths-ignore:
       - "*.md"
 
@@ -12,36 +12,35 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        platform:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-
-          - os: ubuntu-latest
-            target: wasm32-unknown-unknown
-
-    runs-on: ${{ matrix.platform.os }}
+  build-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: Install dependencies
-        run: sudo apt update && sudo apt install -y pkg-config
+      - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
+      - name: Install rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
-          target: ${{ matrix.platform.target }}
-          components: rustfmt, clippy
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --all-targets
-      - name: Test
-        run: cargo test
-      - name: Format
-        run: cargo fmt --all -- --check
-      - name: Clippy
-        run: cargo clippy -- -Dwarnings
+          components: clippy, rustfmt
+          targets: i686-unknown-linux-gnu
+
+      - name: rustfmt
+        run: |
+          cargo fmt --all --check
+
+      - name: clippy
+        run: |
+          cargo clippy --all-features --all-targets -- -D warnings
+
+      - name: build
+        run: |
+          cargo build
+
+      - name: test
+        run: |
+          ./scripts/test.sh
+
+      - name: test i686-unknown-linux-gnu
+        run: |
+          sudo apt install gcc-multilib
+          ./scripts/test.sh --target i686-unknown-linux-gnu

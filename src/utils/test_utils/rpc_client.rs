@@ -11,13 +11,13 @@ pub async fn get_transaction_by_id(tx_id: &str, network: Network) -> anyhow::Res
         Network::Testnet => "/testnet",
         Network::Regtest => "/regtest",
         Network::Signet => "/signet",
-        Network::Bitcoin | _ => "",
+        _ => "",
     };
 
     let url = format!("https://blockstream.info{network_str}/api/tx/{tx_id}");
     let tx: TxInfo = reqwest::get(&url).await?.json().await?;
 
-    Ok(tx.try_into()?)
+    tx.try_into()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

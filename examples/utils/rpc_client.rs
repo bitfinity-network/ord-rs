@@ -13,7 +13,7 @@ pub async fn broadcast_transaction(
         Network::Testnet => "/testnet",
         Network::Regtest => "/regtest",
         Network::Signet => "/signet",
-        Network::Bitcoin | _ => "",
+        _ => "",
     };
 
     let url = format!("https://blockstream.info{network_str}/api/tx");
@@ -66,7 +66,7 @@ pub async fn get_tx_by_hash(txid: &Txid, network: Network) -> anyhow::Result<Api
         Network::Testnet => "/testnet",
         Network::Regtest => "/regtest",
         Network::Signet => "/signet",
-        Network::Bitcoin | _ => "",
+        _ => "",
     };
 
     let url = format!("https://blockstream.info{network_str}/api/tx/{}", txid);
