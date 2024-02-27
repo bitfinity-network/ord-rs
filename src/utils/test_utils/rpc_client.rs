@@ -11,7 +11,7 @@ pub async fn get_transaction_by_id(tx_id: &str, network: Network) -> anyhow::Res
         Network::Testnet => "/testnet",
         Network::Regtest => "/regtest",
         Network::Signet => "/signet",
-        Network::Bitcoin | _ => "",
+        _ => "",
     };
 
     let url = format!("https://blockstream.info{network_str}/api/tx/{tx_id}");
