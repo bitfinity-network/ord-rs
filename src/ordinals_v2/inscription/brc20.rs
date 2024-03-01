@@ -1,15 +1,14 @@
 //! BRC-20
 
-use std::str::FromStr;
-
 use bitcoin::script::PushBytesBuf;
 use serde_with::{serde_as, DisplayFromStr};
+use std::str::FromStr;
 
 use crate::{utils, OrdError, OrdResult};
 
 const PROTOCOL: &str = "brc-20";
 
-/// BRC-20 operation
+/// BRC-20 operations
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op")]
 pub enum Brc20 {
@@ -55,6 +54,8 @@ impl Brc20 {
     }
 
     /// Encodes `Self` as a JSON string.
+    ///
+    /// Serialization can fail if `Self`'s derived implementation of `Serialize`` decides to fail.
     pub fn encode(&self) -> OrdResult<String> {
         serde_json::to_string(self).map_err(OrdError::from)
     }
@@ -73,7 +74,7 @@ impl FromStr for Brc20 {
     }
 }
 
-/// The BRC20 `deploy` parameters.
+/// The BRC20 `deploy` parameters
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Brc20Deploy {
@@ -90,7 +91,7 @@ pub struct Brc20Deploy {
     pub dec: Option<u64>,
 }
 
-/// The BRC20 `mint` parameters.
+/// The BRC20 `mint` parameters
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Brc20Mint {
@@ -101,7 +102,7 @@ pub struct Brc20Mint {
     pub amt: u64,
 }
 
-/// The BRC20 `transfer` parameters.
+/// The BRC20 `transfer` parameters
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Brc20Transfer {

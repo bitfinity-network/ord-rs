@@ -1,7 +1,8 @@
 //! NFT
 
-use crate::{OrdError, OrdResult};
+use crate::{utils, OrdError, OrdResult};
 
+use bitcoin::script::PushBytesBuf;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -41,18 +42,35 @@ impl Nft {
         Ok(serde_json::to_string(self)?)
     }
 
+    /// Returns `Self` as a JSON-encoded operation to be pushed to the redeem script.
+    pub fn as_push_bytes(&self) -> OrdResult<PushBytesBuf> {
+        utils::bytes_to_push_bytes(self.encode()?.as_bytes())
+    }
+
+    /// Returns the NFT inscription's content_type as a string if available, or `None` otherwise.
     pub fn content_type(&self) -> Option<&str> {
         std::str::from_utf8(self.content_type.as_ref()?).ok()
     }
 
+    /// Returns the NFT inscription's body as bytes if available, or `None` otherwise.
     pub fn body_bytes(&self) -> Option<&[u8]> {
         Some(self.body.as_ref()?)
     }
 
+    /// Returns the NFT inscription's body as a string if available, or `None` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the slice is not UTF-8 with a description as to why the provided slice is not UTF-8.
     pub fn body_str(&self) -> Option<&str> {
         std::str::from_utf8(self.body.as_ref()?).ok()
     }
 
+    /// Returns the NFT inscription's metadata as a string if available, or `None` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the slice is not UTF-8 with a description as to why the provided slice is not UTF-8.
     pub fn metadata(&self) -> Option<&str> {
         std::str::from_utf8(self.metadata.as_ref()?).ok()
     }
