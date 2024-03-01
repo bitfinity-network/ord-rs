@@ -1,6 +1,6 @@
 # OrdinalsV2
 
-Ordinal-aware transaction-builder implementation.
+Ordinal-aware Bitcoin wallet and indexer for Ordinal inscriptions.
 
 ## Modules
 
