@@ -25,6 +25,8 @@ pub enum OrdError {
     Script(#[from] bitcoin::blockdata::script::Error),
     #[error("No transaction inputs")]
     NoInputs,
+    #[error("Invalid UTF-8 in: {0}")]
+    Utf8Encoding(#[from] std::str::Utf8Error),
     #[error("Inscription parser error: {0}")]
     InscriptionParser(#[from] InscriptionParseError),
 }
@@ -38,4 +40,6 @@ pub enum InscriptionParseError {
     UnexpectedPushBytes,
     #[error("bad data syntax")]
     BadDataSyntax,
+    #[error("invalid MIME type format")]
+    ContentType,
 }
