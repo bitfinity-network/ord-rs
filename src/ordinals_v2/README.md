@@ -6,3 +6,4 @@ Ordinal-aware transaction-builder implementation.
 
 - [inscription](/src/ordinals_v2/inscription): `Brc20` and `Nft` inscription types.
 - [wallet](/src/ordinals_v2/wallet): Transaction builder and processor.
+- [indexer](/src/ordinals_v2/indexer): Scans the Bitcoin blockchain to catalog, organize, and provide information about Ordinal inscriptions.
