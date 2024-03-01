@@ -34,12 +34,22 @@ pub enum OrdError {
 /// Inscription parsing errors.
 #[derive(Error, Debug)]
 pub enum InscriptionParseError {
+    #[error("invalid transaction id: {0}")]
+    Txid(#[from] bitcoin::hashes::hex::HexToArrayError),
+    #[error("invalid character: {0}")]
+    Character(char),
+    #[error("invalid MIME type format")]
+    ContentType,
+    #[error("invalid length: {0}")]
+    InscriptionIdLength(usize),
     #[error("unexpected opcode token")]
     UnexpectedOpcode,
     #[error("unexpected push bytes token")]
     UnexpectedPushBytes,
     #[error("bad data syntax")]
     BadDataSyntax,
-    #[error("invalid MIME type format")]
-    ContentType,
+    #[error("invalid separator: {0}")]
+    CharacterSeparator(char),
+    #[error("invalid index: {0}")]
+    Index(#[from] std::num::ParseIntError),
 }

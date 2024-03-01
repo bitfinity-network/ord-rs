@@ -1,5 +1,8 @@
 //! NFT
 
+pub mod id;
+
+use super::constants;
 use crate::{utils, InscriptionParseError, OrdError, OrdResult};
 
 use bitcoin::{
@@ -9,8 +12,6 @@ use bitcoin::{
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::str::FromStr;
-
-use super::constants;
 
 /// Represents an arbitrary Ordinal inscription. We're "unofficially" referring to this as an NFT
 /// (e.g., like an ERC721 token).
