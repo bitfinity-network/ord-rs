@@ -2,10 +2,15 @@
 
 use crate::{utils, InscriptionParseError, OrdError, OrdResult};
 
-use bitcoin::script::PushBytesBuf;
+use bitcoin::{
+    opcodes,
+    script::{Builder as ScriptBuilder, PushBytesBuf},
+};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::str::FromStr;
+
+use super::constants;
 
 /// Represents an arbitrary Ordinal inscription. We're "unofficially" referring to this as an NFT
 /// (e.g., like an ERC721 token).
@@ -63,6 +68,59 @@ impl Nft {
         }
 
         Ok(self.clone())
+    }
+
+    pub fn append_reveal_script_to_builder(&self, mut builder: ScriptBuilder) -> ScriptBuilder {
+        builder = builder
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(constants::PROTOCOL_ID);
+
+        if let Some(content_type) = self.content_type.clone() {
+            builder = builder
+                .push_slice(constants::CONTENT_TYPE_TAG)
+                .push_slice(PushBytesBuf::try_from(content_type).unwrap());
+        }
+
+        if let Some(content_encoding) = self.content_encoding.clone() {
+            builder = builder
+                .push_slice(constants::CONTENT_ENCODING_TAG)
+                .push_slice(PushBytesBuf::try_from(content_encoding).unwrap());
+        }
+
+        if let Some(protocol) = self.metaprotocol.clone() {
+            builder = builder
+                .push_slice(constants::METAPROTOCOL_TAG)
+                .push_slice(PushBytesBuf::try_from(protocol).unwrap());
+        }
+
+        if let Some(parent) = self.parent.clone() {
+            builder = builder
+                .push_slice(constants::PARENT_TAG)
+                .push_slice(PushBytesBuf::try_from(parent).unwrap());
+        }
+
+        if let Some(pointer) = self.pointer.clone() {
+            builder = builder
+                .push_slice(constants::POINTER_TAG)
+                .push_slice(PushBytesBuf::try_from(pointer).unwrap());
+        }
+
+        if let Some(metadata) = &self.metadata {
+            for chunk in metadata.chunks(520) {
+                builder = builder.push_slice(constants::METADATA_TAG);
+                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
+            }
+        }
+
+        if let Some(body) = &self.body {
+            builder = builder.push_slice(constants::BODY_TAG);
+            for chunk in body.chunks(520) {
+                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
+            }
+        }
+
+        builder.push_opcode(opcodes::all::OP_ENDIF)
     }
 
     /// Encodes `Self` as a JSON string.
