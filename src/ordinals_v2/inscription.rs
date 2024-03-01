@@ -1,2 +1,2 @@
-mod brc20;
-mod nft;
+pub mod brc20;
+pub mod nft;

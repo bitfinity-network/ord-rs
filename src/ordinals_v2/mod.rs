@@ -1,2 +1,2 @@
-mod inscription;
-mod wallet;
+pub mod inscription;
+pub mod wallet;
