@@ -46,9 +46,9 @@ impl Nft {
     pub fn validate_content_type(&self) -> OrdResult<Self> {
         if let Some(content_type) = &self.content_type {
             let content_type_str =
-                std::str::from_utf8(content_type).map_err(|e| OrdError::Utf8Encoding(e))?;
+                std::str::from_utf8(content_type).map_err(OrdError::Utf8Encoding)?;
 
-            if !content_type_str.contains("/") {
+            if !content_type_str.contains('/') {
                 return Err(OrdError::InscriptionParser(
                     InscriptionParseError::ContentType,
                 ));
