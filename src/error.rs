@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// BRC-20 error
+/// Ordinal transaction handling error types
 #[derive(Error, Debug)]
 pub enum OrdError {
     #[error("Ord codec error: {0}")]
@@ -9,26 +9,27 @@ pub enum OrdError {
     BitcoinSigHash(#[from] bitcoin::sighash::Error),
     #[error("Bitcoin script error: {0}")]
     PushBytes(#[from] bitcoin::script::PushBytesError),
-    #[error("bad transaction input: {0}")]
+    #[error("Bad transaction input: {0}")]
     InputNotFound(usize),
-    #[error("insufficient balance")]
+    #[error("Insufficient balance")]
     InsufficientBalance,
-    #[error("invalid signature: {0}")]
+    #[error("Invalid signature: {0}")]
     Signature(#[from] bitcoin::secp256k1::Error),
-    #[error("invalid signature")]
+    #[error("Invalid signature")]
     UnexpectedSignature,
-    #[error("taproot builder error: {0}")]
+    #[error("Taproot builder error: {0}")]
     TaprootBuilder(#[from] bitcoin::taproot::TaprootBuilderError),
-    #[error("taproot compute error")]
+    #[error("Taproot compute error")]
     TaprootCompute,
-    #[error("scripterror: {0}")]
+    #[error("Scripterror: {0}")]
     Script(#[from] bitcoin::blockdata::script::Error),
-    #[error("no transaction inputs")]
+    #[error("No transaction inputs")]
     NoInputs,
-    #[error("inscription parser error: {0}")]
+    #[error("Inscription parser error: {0}")]
     InscriptionParser(#[from] InscriptionParseError),
 }
 
+/// Inscription parsing errors.
 #[derive(Error, Debug)]
 pub enum InscriptionParseError {
     #[error("unexpected opcode token")]
