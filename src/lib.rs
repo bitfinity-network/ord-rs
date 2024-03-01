@@ -19,6 +19,8 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
+mod ordinals_v2;
+
 mod error;
 mod inscription;
 mod result;
