@@ -63,10 +63,8 @@ pub fn parse(protocol: Protocol, data: InscriptionType) -> OrdResult<Inscription
             }
         },
         Protocol::Nft => {
-            // let nft_data = serde_json::from_str::<Nft>(&data.encode()?)?;
-            // let nft = Nft::new(nft_data.content_type, nft_data.body, nft_data.metadata);
-            // Ok(InscriptionType::NonFungible { scribe: nft })
-            todo!()
+            let nft = serde_json::from_str::<Nft>(&data.encode()?)?;
+            Ok(InscriptionType::NonFungible { scribe: nft })
         }
     }
 }
