@@ -16,24 +16,24 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::{io::Cursor, str::FromStr};
 
-/// Represents an arbitrary Ordinal Nft. We're "unofficially" referring to this as an NFT
+/// Represents an arbitrary Ordinal inscription. We're "unofficially" referring to this as an NFT
 /// (e.g., like an ERC721 token).
 ///
-/// Nfts may include fields before an optional body.
+/// NFTs may include fields before an optional body.
 /// Each field consists of two data pushes, a tag and a value.
 ///
-/// [Reference](https://docs.ordinals.com/Nfts.html#fields)
+/// [Reference](https://docs.ordinals.com/inscriptions.html#fields)
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Nft {
-    /// The main body of the Nft.
+    /// The main body of the NFT.
     pub body: Option<Vec<u8>>,
     /// Has a tag of 1, representing the MIME type of the body.
     pub content_type: Option<Vec<u8>>,
     /// Has a tag of 2, representing the position of the inscribed sat in the outputs.
     pub pointer: Option<Vec<u8>>,
-    /// Has a tag of 3, representing the parent Nft, i.e., the owner of an Nft
-    /// can create child Nfts.
+    /// Has a tag of 3, representing the parent NFT, i.e., the owner of an NFT
+    /// can create child NFT.
     pub parent: Option<Vec<u8>>,
     /// Has a tag of 5, representing CBOR metadata, stored as data pushes.
     pub metadata: Option<Vec<u8>>,
@@ -44,7 +44,7 @@ pub struct Nft {
     /// Has a tag of 9, representing the encoding of the body.
     pub content_encoding: Option<Vec<u8>>,
     pub unrecognized_even_field: bool,
-    /// Has a tag of 11, representing a nominated Nft.
+    /// Has a tag of 11, representing a nominated NFT.
     pub delegate: Option<Vec<u8>>,
 }
 
@@ -146,6 +146,10 @@ impl Nft {
         Some(self.body.as_ref()?)
     }
 
+    pub fn body_str(&self) -> Option<&str> {
+        std::str::from_utf8(self.body.as_ref()?).ok()
+    }
+
     pub fn content_length(&self) -> Option<usize> {
         Some(self.body()?.len())
     }
@@ -197,6 +201,42 @@ mod tests {
     use super::*;
 
     use nft_tests::create_nft;
+
+    #[test]
+    fn nft_creation() {
+        let nft = create_nft("text/plain", "Hello, world!");
+
+        assert_eq!(nft.content_type(), Some("text/plain"));
+        assert_eq!(nft.body_str(), Some("Hello, world!"));
+        assert!(nft.metadata().is_none());
+    }
+
+    #[test]
+    fn json_serialization_deserialization() {
+        let nft = create_nft("text/plain", "Hello, world!");
+
+        let encoded = nft.encode().unwrap();
+        let decoded: Nft = Nft::from_json_str(&encoded).unwrap();
+        assert_eq!(nft, decoded);
+    }
+
+    #[test]
+    fn to_push_bytes_conversion() {
+        let nft = create_nft("text/plain", "Hello, world!");
+
+        let push_bytes = nft.as_push_bytes().unwrap();
+        assert_eq!(push_bytes.as_bytes(), nft.encode().unwrap().as_bytes());
+    }
+
+    #[test]
+    fn invalid_utf8() {
+        let invalid_utf8 = vec![0xff, 0xfe, 0xfd];
+        let nft = create_nft("text/plain", invalid_utf8);
+
+        assert!(nft.body_str().is_none());
+        assert!(nft.metadata().is_none());
+        assert!(nft.content_type().is_some());
+    }
 
     #[test]
     fn reveal_script_chunks_body() {
@@ -305,6 +345,18 @@ mod tests {
             .count(),
             8
         );
+    }
+
+    #[test]
+    fn invalid_mime_type_nft() {
+        let json = r#"{
+            "content_type": "plain",
+            "body": "SGVsbG8sIHdvcmxkIQ==",
+            "metadata": "eyJjcmVhdG9yIjogIkFsaWNlIn0="
+        }"#;
+
+        let nft = Nft::from_json_str(json);
+        assert!(nft.is_err());
     }
 
     #[test]
