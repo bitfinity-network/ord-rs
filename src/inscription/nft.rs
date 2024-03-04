@@ -4,8 +4,7 @@ pub mod id;
 #[cfg(test)]
 mod nft_tests;
 
-use super::constants;
-use crate::{utils, InscriptionParseError, OrdError, OrdResult};
+use crate::{constants, utils, InscriptionParseError, OrdError, OrdResult};
 
 use bitcoin::{
     opcodes,

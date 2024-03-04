@@ -294,7 +294,7 @@ mod test {
     use hex_literal::hex;
 
     use super::*;
-    use crate::brc20::Brc20;
+    use crate::inscription::brc20::Brc20;
 
     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";

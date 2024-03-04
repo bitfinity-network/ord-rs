@@ -19,18 +19,16 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
-pub mod ordinals_v2;
-
 mod error;
-mod inscription;
+pub mod inscription;
 mod result;
 mod utils;
 
-pub mod brc20;
-pub mod transaction;
+pub(crate) mod constants;
+pub mod wallet;
 
 pub use bitcoin;
 pub use error::{InscriptionParseError, OrdError};
-pub use inscription::Inscription;
+pub use inscription::{brc20::Brc20, nft::Nft, Inscription};
 pub use result::OrdResult;
-pub use transaction::{OrdParser, OrdTransactionBuilder};
+pub use wallet::{OrdParser, OrdTransactionBuilder};

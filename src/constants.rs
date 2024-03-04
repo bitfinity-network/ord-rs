@@ -14,4 +14,5 @@ pub const METAPROTOCOL_TAG: [u8; 1] = [7];
 /// Tag 9, representing the encoding of the body.
 pub const CONTENT_ENCODING_TAG: [u8; 1] = [9];
 /// Tag 11, representing a nominated inscription.
+#[allow(unused)]
 pub const DELEGATE_TAG: [u8; 1] = [11];

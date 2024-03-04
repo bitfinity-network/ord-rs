@@ -4,8 +4,8 @@ use argh::FromArgs;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, PrivateKey};
 use log::{debug, info};
-use ord_rs::brc20::Brc20;
-use ord_rs::transaction::{CreateCommitTransactionArgs, RevealTransactionArgs};
+use ord_rs::wallet::{CreateCommitTransactionArgs, RevealTransactionArgs};
+use ord_rs::Brc20;
 use ord_rs::OrdTransactionBuilder;
 
 use self::utils::rpc_client;
@@ -98,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
 
     debug!("getting reveal transaction...");
     let reveal_transaction = builder.build_reveal_transaction(RevealTransactionArgs {
-        input: ord_rs::transaction::TxInput {
+        input: ord_rs::wallet::TxInput {
             id: commit_txid,
             index: 0,
             amount: commit_tx.reveal_balance,

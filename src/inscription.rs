@@ -1,3 +1,6 @@
+pub mod brc20;
+pub mod nft;
+
 use bitcoin::script::PushBytesBuf;
 
 use crate::OrdResult;

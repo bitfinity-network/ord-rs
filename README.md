@@ -1,4 +1,18 @@
-# ord-rs Rust
+# ord-rs
+
+Ordinal-aware Bitcoin inscriptions wallet and indexer.
+
+## Modules
+
+- [inscription](/src/inscription): `Brc20` and `Nft` inscription types.
+- [wallet](/src/wallet): Transaction builder and processor.
+- [indexer](/src/indexer): Scans the Bitcoin blockchain to catalog, organize, and provide information about Ordinal inscriptions.
+
+## TODO
+
+- [x] When more features are added, consider moving `inscription`, `wallet`, and `indexer` into separate member crates in a workspace.
+
+------------------------------------------------------------------------------------------------------------------------------
 
 [![build-test](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml/badge.svg)](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml)
 

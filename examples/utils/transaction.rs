@@ -6,7 +6,7 @@ use bitcoin::transaction::Version;
 use bitcoin::{
     Address, Amount, OutPoint, PrivateKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
-use ord_rs::transaction::TxInput;
+use ord_rs::wallet::TxInput;
 use ord_rs::OrdError;
 
 #[allow(dead_code)]
