@@ -24,7 +24,6 @@ where
     secp: &'a Secp256k1<All>,
     key_name: String,
     derivation_path: Vec<Vec<u8>>,
-    pub transaction: Transaction,
     /// Represents a signing function from an API
     pub(crate) signer: S,
 }
@@ -38,14 +37,12 @@ where
         secp: &'a Secp256k1<All>,
         key_name: String,
         derivation_path: Vec<Vec<u8>>,
-        transaction: Transaction,
         signer: S,
     ) -> Self {
         Self {
             secp,
             key_name,
             derivation_path,
-            transaction,
             signer,
         }
     }
@@ -53,22 +50,31 @@ where
     pub async fn sign_commit_transaction(
         &mut self,
         own_pubkey: &PublicKey,
-        inputs: &[TxInput],
+        utxos: &[TxInput],
+        transaction: Transaction,
         txin_script: &ScriptBuf,
     ) -> OrdResult<Transaction> {
-        self.sign_ecdsa(own_pubkey, inputs, txin_script, TransactionType::Commit)
-            .await
+        self.sign_ecdsa(
+            own_pubkey,
+            utxos,
+            transaction,
+            txin_script,
+            TransactionType::Commit,
+        )
+        .await
     }
 
     pub async fn sign_reveal_transaction_ecdsa(
         &mut self,
         own_pubkey: &PublicKey,
-        input: &TxInput,
+        utxo: &TxInput,
+        transaction: Transaction,
         redeem_script: &bitcoin::ScriptBuf,
     ) -> OrdResult<Transaction> {
         self.sign_ecdsa(
             own_pubkey,
-            &[input.clone()],
+            &[utxo.clone()],
+            transaction,
             redeem_script,
             TransactionType::Reveal,
         )
@@ -79,11 +85,12 @@ where
         &mut self,
         taproot: &TaprootPayload,
         redeem_script: &ScriptBuf,
+        transaction: Transaction,
     ) -> OrdResult<Transaction> {
         let prevouts_array = vec![taproot.prevouts.clone()];
         let prevouts = Prevouts::All(&prevouts_array);
 
-        let mut sighash_cache = SighashCache::new(self.transaction.clone());
+        let mut sighash_cache = SighashCache::new(transaction.clone());
         let sighash_sig = sighash_cache.taproot_script_spend_signature_hash(
             0,
             &prevouts,
@@ -119,12 +126,13 @@ where
     async fn sign_ecdsa(
         &mut self,
         own_pubkey: &PublicKey,
-        inputs: &[TxInput],
+        utxos: &[TxInput],
+        transaction: Transaction,
         script: &ScriptBuf,
         transaction_type: TransactionType,
     ) -> OrdResult<Transaction> {
-        let mut hash = SighashCache::new(self.transaction.clone());
-        for (index, input) in inputs.iter().enumerate() {
+        let mut hash = SighashCache::new(transaction.clone());
+        for (index, input) in utxos.iter().enumerate() {
             let signature_hash = match transaction_type {
                 TransactionType::Commit => hash.p2wpkh_signature_hash(
                     index,

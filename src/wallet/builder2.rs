@@ -40,7 +40,7 @@ where
     T: Inscription,
 {
     /// Inputs of the transaction
-    pub inputs: Vec<TxInput>,
+    pub utxos: Vec<TxInput>,
     /// Inscription to write
     pub inscription: T,
     /// Address to send the leftovers BTC of the trasnsaction
@@ -127,7 +127,7 @@ where
         // calc balance
         // exceeding amount of transaction to send to leftovers recipient
         let leftover_amount = args
-            .inputs
+            .utxos
             .iter()
             .map(|input| input.amount.to_sat())
             .sum::<u64>()
@@ -175,7 +175,7 @@ where
 
         // txin
         let tx_in = args
-            .inputs
+            .utxos
             .iter()
             .map(|input| TxIn {
                 previous_output: OutPoint {
@@ -197,10 +197,14 @@ where
         };
 
         // sign transaction and update witness
-        self.signer.transaction = unsigned_tx;
         let tx = self
             .signer
-            .sign_commit_transaction(&self.public_key, &args.inputs, &args.txin_script_pubkey)
+            .sign_commit_transaction(
+                &self.public_key,
+                &args.utxos,
+                unsigned_tx,
+                &args.txin_script_pubkey,
+            )
             .await?;
 
         Ok(CreateCommitTransaction {
@@ -241,16 +245,18 @@ where
             output: tx_out,
         };
 
-        self.signer.transaction = unsigned_tx;
         let tx = match self.taproot_payload.as_ref() {
-            Some(taproot_payload) => self
-                .signer
-                .sign_reveal_transaction_schnorr(taproot_payload, &args.redeem_script),
+            Some(taproot_payload) => self.signer.sign_reveal_transaction_schnorr(
+                taproot_payload,
+                &args.redeem_script,
+                unsigned_tx,
+            ),
             None => {
                 self.signer
                     .sign_reveal_transaction_ecdsa(
                         &self.public_key,
                         &args.input,
+                        unsigned_tx,
                         &args.redeem_script,
                     )
                     .await
