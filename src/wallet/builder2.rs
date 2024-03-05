@@ -1,20 +1,21 @@
-use super::builder::signer2::Wallet;
-
-use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
-use bitcoin::opcodes::{OP_0, OP_FALSE};
-use bitcoin::script::Builder as ScriptBuilder;
-use bitcoin::transaction::Version;
-use bitcoin::{absolute::LockTime, Network};
-use bitcoin::{
-    secp256k1::{self, PublicKey},
-    Address, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-    XOnlyPublicKey,
+use super::builder::{
+    signer2::Wallet,
+    taproot::{generate_keypair, TaprootPayload},
 };
+use crate::{inscription::Inscription, utils::bytes_to_push_bytes, OrdError, OrdResult};
 
-use super::builder::taproot::{generate_keypair, TaprootPayload};
-use crate::inscription::Inscription;
-use crate::utils::bytes_to_push_bytes;
-use crate::{OrdError, OrdResult};
+use bitcoin::{
+    absolute::LockTime,
+    opcodes::{
+        all::{OP_CHECKSIG, OP_ENDIF, OP_IF},
+        OP_0, OP_FALSE,
+    },
+    script::Builder as ScriptBuilder,
+    secp256k1::{self, PublicKey},
+    transaction::Version,
+    Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid,
+    Witness, XOnlyPublicKey,
+};
 
 const POSTAGE: u64 = 333;
 
@@ -297,8 +298,7 @@ pub struct TxInput {
 
 // #[cfg(test)]
 // mod test {
-
-//     use std::str::FromStr;
+//     use std::{cell::RefCell, str::FromStr};
 
 //     use bitcoin::{secp256k1::Secp256k1, PrivateKey};
 //     use bitcoin::{Address, Amount, Network, Sequence, Txid};
@@ -306,7 +306,14 @@ pub struct TxInput {
 
 //     use super::*;
 //     use crate::inscription::brc20::Brc20;
-//     use crate::utils::test_utils::mock_signer::MockSigner;
+
+//     thread_local! {
+//         // The derivation path to use for ECDSA secp256k1.
+//         static DERIVATION_PATH: Vec<Vec<u8>> = vec![];
+
+//         // The ECDSA key name.
+//         static KEY_NAME: RefCell<String> = RefCell::new(String::from(""));
+//     }
 
 //     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
 //     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
