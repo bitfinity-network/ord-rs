@@ -4,7 +4,11 @@ pub mod id;
 #[cfg(test)]
 mod nft_tests;
 
-use crate::{constants, utils, InscriptionParseError, OrdError, OrdResult};
+use crate::{
+    constants,
+    utils::{self, bytes_to_push_bytes},
+    Inscription, InscriptionParseError, OrdError, OrdResult,
+};
 
 use bitcoin::{
     opcodes,
@@ -45,6 +49,27 @@ pub struct Nft {
     pub unrecognized_even_field: bool,
     /// Has a tag of 11, representing a nominated NFT.
     pub delegate: Option<Vec<u8>>,
+}
+
+impl Inscription for Nft {
+    fn content_type(&self) -> String {
+        unimplemented!()
+    }
+
+    fn data(&self) -> OrdResult<PushBytesBuf> {
+        bytes_to_push_bytes(self.encode()?.as_bytes())
+    }
+
+    fn parse(data: &[u8]) -> OrdResult<Self>
+    where
+        Self: Sized,
+    {
+        let s = String::from_utf8(data.to_vec())
+            .map_err(|_| OrdError::InscriptionParser(InscriptionParseError::BadDataSyntax))?;
+        let inscription = serde_json::from_str(&s).map_err(OrdError::from)?;
+
+        Ok(inscription)
+    }
 }
 
 impl Nft {
