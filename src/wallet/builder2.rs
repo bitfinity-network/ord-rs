@@ -11,10 +11,10 @@ use bitcoin::{
         OP_0, OP_FALSE,
     },
     script::Builder as ScriptBuilder,
-    secp256k1::{self, PublicKey},
+    secp256k1,
     transaction::Version,
-    Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid,
-    Witness, XOnlyPublicKey,
+    Address, Amount, Network, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+    Txid, Witness, XOnlyPublicKey,
 };
 
 const POSTAGE: u64 = 333;
@@ -276,7 +276,7 @@ where
         T: Inscription,
     {
         let encoded_pubkey = match pubkey {
-            RedeemScriptPubkey::Ecdsa(pubkey) => bytes_to_push_bytes(&pubkey.serialize())?,
+            RedeemScriptPubkey::Ecdsa(pubkey) => bytes_to_push_bytes(&pubkey.to_bytes())?,
             RedeemScriptPubkey::XPublickey(pubkey) => bytes_to_push_bytes(&pubkey.serialize())?,
         };
 
@@ -294,20 +294,40 @@ where
             .into_script())
     }
 
-    // /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2TR as script type (preferred).
-    // #[cfg(test)]
-    // pub(crate) fn p2tr(private_key: PrivateKey) -> Self {
-    //     let public_key = private_key.public_key(&bitcoin::secp256k1::Secp256k1::new());
-    //     Self::new(public_key, ScriptType::P2TR)
-    // }
+    /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2TR as script type (preferred).
+    #[cfg(test)]
+    #[allow(unused)]
+    pub(crate) fn p2tr(private_key: bitcoin::PrivateKey) -> Self {
+        use crate::wallet::builder::signer2::WalletType;
+        use bitcoin::key::Secp256k1;
 
-    // /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2WSH as script type.
-    // /// P2WSH may not be supported by all the indexers, so P2TR should be preferred.
-    // #[cfg(test)]
-    // pub(crate) fn p2wsh(private_key: PrivateKey) -> Self {
-    //     let public_key = private_key.public_key(&bitcoin::secp256k1::Secp256k1::new());
-    //     Self::new(private_key, ScriptType::P2WSH)
-    // }
+        let public_key = private_key.public_key(&Secp256k1::new());
+        let wallet = Wallet::new_with_signer(
+            Secp256k1::new(),
+            None,
+            None,
+            WalletType::LocalWallet { private_key },
+        );
+        Self::new(public_key, ScriptType::P2TR, wallet)
+    }
+
+    /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2WSH as script type.
+    /// P2WSH may not be supported by all the indexers, so P2TR should be preferred.
+    #[cfg(test)]
+    #[allow(unused)]
+    pub(crate) fn p2wsh(private_key: bitcoin::PrivateKey) -> Self {
+        use crate::wallet::builder::signer2::WalletType;
+        use bitcoin::key::Secp256k1;
+
+        let public_key = private_key.public_key(&Secp256k1::new());
+        let wallet = Wallet::new_with_signer(
+            Secp256k1::new(),
+            None,
+            None,
+            WalletType::LocalWallet { private_key },
+        );
+        Self::new(public_key, ScriptType::P2WSH, wallet)
+    }
 }
 
 #[derive(Debug, Clone)]

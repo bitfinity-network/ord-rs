@@ -4,20 +4,24 @@ use crate::{OrdError, OrdResult};
 
 use bitcoin::{
     hashes::Hash as _, secp256k1::ecdsa::Signature, sighash::Prevouts, taproot::LeafVersion,
-    TapLeafHash, TapSighashType,
+    PrivateKey, PublicKey, TapLeafHash, TapSighashType,
 };
 use bitcoin::{
     key::Secp256k1,
-    secp256k1::{self, All, PublicKey},
+    secp256k1::{self, All},
     sighash::SighashCache,
     taproot::ControlBlock,
     ScriptBuf, Transaction, Witness,
 };
 
 /// Types of signers
-pub enum WalletType {
-    LocalWallet { private_key: bitcoin::PrivateKey },
-    ExternalWallet,
+pub enum WalletType<S, F>
+where
+    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F,
+    F: std::future::Future<Output = Vec<u8>>,
+{
+    LocalWallet { private_key: PrivateKey },
+    ExternalWallet { signer: S },
 }
 
 /// An abstraction over a transaction signer.
@@ -27,11 +31,9 @@ where
     F: std::future::Future<Output = Vec<u8>>,
 {
     secp: Secp256k1<All>,
-    key_name: String,
-    derivation_path: Vec<Vec<u8>>,
-    /// Represents a signing function from an API
-    pub(crate) signer: S,
-    pub(crate) wallet_type: WalletType,
+    key_name: Option<String>,
+    derivation_path: Option<Vec<Vec<u8>>>,
+    pub(crate) wallet_type: WalletType<S, F>,
 }
 
 impl<S, F> Wallet<S, F>
@@ -41,16 +43,14 @@ where
 {
     pub fn new_with_signer(
         secp: Secp256k1<All>,
-        key_name: String,
-        derivation_path: Vec<Vec<u8>>,
-        signer: S,
-        wallet_type: WalletType,
+        key_name: Option<String>,
+        derivation_path: Option<Vec<Vec<u8>>>,
+        wallet_type: WalletType<S, F>,
     ) -> Self {
         Self {
             secp,
             key_name,
             derivation_path,
-            signer,
             wallet_type,
         }
     }
@@ -158,11 +158,11 @@ where
 
             let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
 
-            let signature = match self.wallet_type {
-                WalletType::ExternalWallet => {
-                    (self.signer)(
-                        self.key_name.clone(),
-                        self.derivation_path.clone(),
+            let signature = match &self.wallet_type {
+                WalletType::ExternalWallet { signer } => {
+                    (signer)(
+                        self.key_name.clone().unwrap(),
+                        self.derivation_path.clone().unwrap(),
                         signature_hash.as_byte_array().to_vec(),
                     )
                     .await
@@ -177,14 +177,21 @@ where
             debug!("signature: {}", signature.serialize_der());
             // verify signature
             debug!("verifying signature");
-            self.secp.verify_ecdsa(&message, &signature, own_pubkey)?;
+
+            self.secp
+                .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
             debug!("signature verified");
             // append witness
             let signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
             match transaction_type {
                 TransactionType::Commit => {
                     self.append_witness_to_input(
-                        &mut hash, signature, index, own_pubkey, None, None,
+                        &mut hash,
+                        signature,
+                        index,
+                        &own_pubkey.inner,
+                        None,
+                        None,
                     )?;
                 }
                 TransactionType::Reveal => {
@@ -192,7 +199,7 @@ where
                         &mut hash,
                         signature,
                         index,
-                        own_pubkey,
+                        &own_pubkey.inner,
                         Some(script),
                         None,
                     )?;
@@ -208,7 +215,7 @@ where
         sighasher: &mut SighashCache<Transaction>,
         signature: OrdSignature,
         index: usize,
-        pubkey: &PublicKey,
+        pubkey: &secp256k1::PublicKey,
         redeem_script: Option<&ScriptBuf>,
         control_block: Option<&ControlBlock>,
     ) -> OrdResult<()> {
