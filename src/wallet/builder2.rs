@@ -21,16 +21,16 @@ const POSTAGE: u64 = 333;
 
 /// Ordinal-aware transaction builder for arbitrary (`Nft`)
 /// and `Brc20` inscriptions.
-pub struct OrdTransactionBuilder<'a, S, F>
+pub struct OrdTransactionBuilder<S, F>
 where
-    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F,
+    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F + std::default::Default,
     F: std::future::Future<Output = Vec<u8>>,
 {
     public_key: PublicKey,
     script_type: ScriptType,
     /// used to sign the reveal transaction when using P2TR
     taproot_payload: Option<TaprootPayload>,
-    signer: Wallet<'a, S, F>,
+    signer: Wallet<S, F>,
 }
 
 #[derive(Debug)]
@@ -87,12 +87,12 @@ enum RedeemScriptPubkey {
     XPublickey(XOnlyPublicKey),
 }
 
-impl<'a, S, F> OrdTransactionBuilder<'a, S, F>
+impl<S, F> OrdTransactionBuilder<S, F>
 where
-    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F,
+    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F + std::default::Default,
     F: std::future::Future<Output = Vec<u8>>,
 {
-    pub fn new(public_key: PublicKey, script_type: ScriptType, signer: Wallet<'a, S, F>) -> Self {
+    pub fn new(public_key: PublicKey, script_type: ScriptType, signer: Wallet<S, F>) -> Self {
         Self {
             public_key,
             script_type,
@@ -293,6 +293,21 @@ where
             .push_opcode(OP_ENDIF)
             .into_script())
     }
+
+    // /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2TR as script type (preferred).
+    // #[cfg(test)]
+    // pub(crate) fn p2tr(private_key: PrivateKey) -> Self {
+    //     let public_key = private_key.public_key(&bitcoin::secp256k1::Secp256k1::new());
+    //     Self::new(public_key, ScriptType::P2TR)
+    // }
+
+    // /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2WSH as script type.
+    // /// P2WSH may not be supported by all the indexers, so P2TR should be preferred.
+    // #[cfg(test)]
+    // pub(crate) fn p2wsh(private_key: PrivateKey) -> Self {
+    //     let public_key = private_key.public_key(&bitcoin::secp256k1::Secp256k1::new());
+    //     Self::new(private_key, ScriptType::P2WSH)
+    // }
 }
 
 #[derive(Debug, Clone)]
@@ -324,8 +339,8 @@ pub struct TxInput {
 //     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
 //     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
-//     #[test]
-//     fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2wsh() {
+//     #[tokio::test]
+//     async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2wsh() {
 //         // this test refers to these testnet transactions, commit and reveal:
 //         // <https://mempool.space/testnet/tx/4472899344bce1a6c83c6ec45859f79ab622b55b3faf67e555e3e03cee5139e6>
 //         // <https://mempool.space/testnet/tx/c769750df54ee38fe2bae876dbf1632c779c3af780958a19cee1ca0497c78e80>
@@ -337,7 +352,7 @@ pub struct TxInput {
 //         let mut builder = OrdTransactionBuilder::p2wsh(private_key);
 
 //         let commit_transaction_args = CreateCommitTransactionArgs {
-//             inputs: vec![TxInput {
+//             utxos: vec![TxInput {
 //                 id: Txid::from_str(
 //                     "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
 //                 )
@@ -352,7 +367,8 @@ pub struct TxInput {
 //             reveal_fee: Amount::from_sat(4_700),
 //         };
 //         let tx_result = builder
-//             .build_commit_transaction(commit_transaction_args)
+//             .build_commit_transaction(Network::Testnet, commit_transaction_args)
+//             .await
 //             .unwrap();
 
 //         assert!(builder.taproot_payload.is_none());
@@ -405,6 +421,7 @@ pub struct TxInput {
 //                 recipient_address: recipient_address.clone(),
 //                 redeem_script: tx_result.redeem_script,
 //             })
+//             .await
 //             .unwrap();
 
 //         let witness = reveal_transaction.input[0].witness.clone().to_vec();
@@ -426,8 +443,8 @@ pub struct TxInput {
 //         );
 //     }
 
-//     #[test]
-//     fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
+//     #[tokio::test]
+//     async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
 //         // this test refers to these testnet transactions, commit and reveal:
 //         // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
 //         // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
@@ -439,7 +456,7 @@ pub struct TxInput {
 //         let mut builder = OrdTransactionBuilder::p2tr(private_key);
 
 //         let commit_transaction_args = CreateCommitTransactionArgs {
-//             inputs: vec![TxInput {
+//             utxos: vec![TxInput {
 //                 id: Txid::from_str(
 //                     "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
 //                 )
@@ -454,7 +471,8 @@ pub struct TxInput {
 //             reveal_fee: Amount::from_sat(4_700),
 //         };
 //         let tx_result = builder
-//             .build_commit_transaction(commit_transaction_args)
+//             .build_commit_transaction(Network::Testnet, commit_transaction_args)
+//             .await
 //             .unwrap();
 
 //         assert!(builder.taproot_payload.is_some());
@@ -498,6 +516,7 @@ pub struct TxInput {
 //                 recipient_address: recipient_address.clone(),
 //                 redeem_script: tx_result.redeem_script,
 //             })
+//             .await
 //             .unwrap();
 
 //         let witness = reveal_transaction.input[0].witness.clone().to_vec();

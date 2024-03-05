@@ -8,42 +8,50 @@ use bitcoin::{
 };
 use bitcoin::{
     key::Secp256k1,
-    secp256k1::PublicKey,
-    secp256k1::{self, All},
+    secp256k1::{self, All, PublicKey},
     sighash::SighashCache,
     taproot::ControlBlock,
     ScriptBuf, Transaction, Witness,
 };
 
+/// Types of signers
+pub enum WalletType {
+    LocalWallet { private_key: bitcoin::PrivateKey },
+    ExternalWallet,
+}
+
 /// An abstraction over a transaction signer.
-pub struct Wallet<'a, S, F>
+pub struct Wallet<S, F>
 where
     S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F,
     F: std::future::Future<Output = Vec<u8>>,
 {
-    secp: &'a Secp256k1<All>,
+    secp: Secp256k1<All>,
     key_name: String,
     derivation_path: Vec<Vec<u8>>,
     /// Represents a signing function from an API
     pub(crate) signer: S,
+    pub(crate) wallet_type: WalletType,
 }
 
-impl<'a, S, F> Wallet<'a, S, F>
+impl<S, F> Wallet<S, F>
 where
     S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F,
     F: std::future::Future<Output = Vec<u8>>,
 {
     pub fn new_with_signer(
-        secp: &'a Secp256k1<All>,
+        secp: Secp256k1<All>,
         key_name: String,
         derivation_path: Vec<Vec<u8>>,
         signer: S,
+        wallet_type: WalletType,
     ) -> Self {
         Self {
             secp,
             key_name,
             derivation_path,
             signer,
+            wallet_type,
         }
     }
 
@@ -150,12 +158,20 @@ where
 
             let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
 
-            let signature = (self.signer)(
-                self.key_name.clone(),
-                self.derivation_path.clone(),
-                signature_hash.as_byte_array().to_vec(),
-            )
-            .await;
+            let signature = match self.wallet_type {
+                WalletType::ExternalWallet => {
+                    (self.signer)(
+                        self.key_name.clone(),
+                        self.derivation_path.clone(),
+                        signature_hash.as_byte_array().to_vec(),
+                    )
+                    .await
+                }
+                WalletType::LocalWallet { private_key } => {
+                    let sig = self.secp.sign_ecdsa(&message, &private_key.inner);
+                    sig.serialize_der().to_vec()
+                }
+            };
 
             let signature = Signature::from_compact(&signature)?;
             debug!("signature: {}", signature.serialize_der());
