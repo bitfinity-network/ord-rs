@@ -16,21 +16,21 @@ use bitcoin::{
     Address, Amount, Network, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
     Txid, Witness, XOnlyPublicKey,
 };
+use std::future::Future;
 
 const POSTAGE: u64 = 333;
 
 /// Ordinal-aware transaction builder for arbitrary (`Nft`)
 /// and `Brc20` inscriptions.
-pub struct OrdTransactionBuilder<S, F>
+pub struct OrdTransactionBuilder<F>
 where
-    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F + std::default::Default,
-    F: std::future::Future<Output = Vec<u8>>,
+    F: Future<Output = Vec<u8>> + Send,
 {
     public_key: PublicKey,
     script_type: ScriptType,
     /// used to sign the reveal transaction when using P2TR
     taproot_payload: Option<TaprootPayload>,
-    signer: Wallet<S, F>,
+    signer: Wallet<F>,
 }
 
 #[derive(Debug)]
@@ -87,12 +87,11 @@ enum RedeemScriptPubkey {
     XPublickey(XOnlyPublicKey),
 }
 
-impl<S, F> OrdTransactionBuilder<S, F>
+impl<F> OrdTransactionBuilder<F>
 where
-    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F + std::default::Default,
-    F: std::future::Future<Output = Vec<u8>>,
+    F: Future<Output = Vec<u8>> + Send,
 {
-    pub fn new(public_key: PublicKey, script_type: ScriptType, signer: Wallet<S, F>) -> Self {
+    pub fn new(public_key: PublicKey, script_type: ScriptType, signer: Wallet<F>) -> Self {
         Self {
             public_key,
             script_type,
@@ -297,13 +296,15 @@ where
     /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2TR as script type (preferred).
     #[cfg(test)]
     #[allow(unused)]
-    pub(crate) fn p2tr(private_key: bitcoin::PrivateKey) -> Self {
-        use crate::wallet::builder::signer2::WalletType;
-        use bitcoin::key::Secp256k1;
+    pub(crate) fn p2tr(private_key: bitcoin::PrivateKey) -> Self
+    where
+        F: Future<Output = Vec<u8>> + Send,
+    {
+        use super::builder::signer2::WalletType;
 
-        let public_key = private_key.public_key(&Secp256k1::new());
+        let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
         let wallet = Wallet::new_with_signer(
-            Secp256k1::new(),
+            secp256k1::Secp256k1::new(),
             None,
             None,
             WalletType::LocalWallet { private_key },
@@ -316,12 +317,11 @@ where
     #[cfg(test)]
     #[allow(unused)]
     pub(crate) fn p2wsh(private_key: bitcoin::PrivateKey) -> Self {
-        use crate::wallet::builder::signer2::WalletType;
-        use bitcoin::key::Secp256k1;
+        use super::builder::signer2::WalletType;
 
-        let public_key = private_key.public_key(&Secp256k1::new());
+        let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
         let wallet = Wallet::new_with_signer(
-            Secp256k1::new(),
+            secp256k1::Secp256k1::new(),
             None,
             None,
             WalletType::LocalWallet { private_key },
@@ -339,7 +339,7 @@ pub struct TxInput {
 
 // #[cfg(test)]
 // mod test {
-//     use std::{cell::RefCell, str::FromStr};
+//     use std::{cell::RefCell, future::Future, pin::Pin, str::FromStr};
 
 //     use bitcoin::{secp256k1::Secp256k1, PrivateKey};
 //     use bitcoin::{Address, Amount, Network, Sequence, Txid};
@@ -356,6 +356,14 @@ pub struct TxInput {
 //         static KEY_NAME: RefCell<String> = RefCell::new(String::from(""));
 //     }
 
+//     fn mock_signer_function(
+//         key_name: String,
+//         derivation_path: Vec<Vec<u8>>,
+//         message: Vec<u8>,
+//     ) -> Pin<Box<dyn Future<Output = Vec<u8>>>> {
+//         Box::pin(async move { Vec::new() })
+//     }
+
 //     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
 //     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
@@ -368,6 +376,8 @@ pub struct TxInput {
 //         let private_key = PrivateKey::from_wif(WIF).unwrap();
 //         let public_key = private_key.public_key(&Secp256k1::new());
 //         let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
+
+//         let public_key = private_key.public_key(&Secp256k1::new());
 
 //         let mut builder = OrdTransactionBuilder::p2wsh(private_key);
 

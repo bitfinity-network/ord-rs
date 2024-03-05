@@ -13,39 +13,39 @@ use bitcoin::{
     taproot::ControlBlock,
     ScriptBuf, Transaction, Witness,
 };
+use std::future::Future;
+
+pub type SignerFn<F> = dyn Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F + Send + Sync;
 
 /// Types of signers
-pub enum WalletType<S, F>
+pub enum WalletType<F>
 where
-    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F,
-    F: std::future::Future<Output = Vec<u8>>,
+    F: Future<Output = Vec<u8>>,
 {
     LocalWallet { private_key: PrivateKey },
-    ExternalWallet { signer: S },
+    ExternalWallet { signer: Box<SignerFn<F>> },
 }
 
 /// An abstraction over a transaction signer.
-pub struct Wallet<S, F>
+pub struct Wallet<F>
 where
-    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F,
-    F: std::future::Future<Output = Vec<u8>>,
+    F: Future<Output = Vec<u8>> + Send,
 {
     secp: Secp256k1<All>,
     key_name: Option<String>,
     derivation_path: Option<Vec<Vec<u8>>>,
-    pub(crate) wallet_type: WalletType<S, F>,
+    pub(crate) wallet_type: WalletType<F>,
 }
 
-impl<S, F> Wallet<S, F>
+impl<F> Wallet<F>
 where
-    S: Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F,
-    F: std::future::Future<Output = Vec<u8>>,
+    F: Future<Output = Vec<u8>> + Send,
 {
     pub fn new_with_signer(
         secp: Secp256k1<All>,
         key_name: Option<String>,
         derivation_path: Option<Vec<Vec<u8>>>,
-        wallet_type: WalletType<S, F>,
+        wallet_type: WalletType<F>,
     ) -> Self {
         Self {
             secp,
