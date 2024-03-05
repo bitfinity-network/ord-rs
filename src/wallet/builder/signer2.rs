@@ -1,5 +1,5 @@
+use super::super::builder2::TxInput;
 use super::taproot::TaprootPayload;
-use super::TxInput;
 use crate::{OrdError, OrdResult};
 
 use bitcoin::{
@@ -24,7 +24,7 @@ where
     secp: &'a Secp256k1<All>,
     key_name: String,
     derivation_path: Vec<Vec<u8>>,
-    transaction: Transaction,
+    pub transaction: Transaction,
     /// Represents a signing function from an API
     pub(crate) signer: S,
 }
