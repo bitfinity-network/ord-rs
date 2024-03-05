@@ -1,5 +1,6 @@
 mod signer;
-mod taproot;
+pub mod signer2;
+pub mod taproot;
 
 use bitcoin::absolute::LockTime;
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
