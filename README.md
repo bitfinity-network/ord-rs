@@ -1,6 +1,6 @@
 # ord-rs
 
-Ordinal-aware Bitcoin inscriptions wallet and indexer.
+A library for working with Ordinal inscriptions.
 
 ## Modules
 
