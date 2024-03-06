@@ -27,7 +27,9 @@ pub mod wallet;
 
 pub use bitcoin;
 pub use error::{InscriptionParseError, OrdError};
-pub use inscription::{brc20::Brc20, nft::Nft, Inscription};
+pub use inscription::brc20::Brc20;
+pub use inscription::nft::Nft;
+pub use inscription::Inscription;
 pub use result::OrdResult;
 pub use wallet::{
     CreateCommitTransaction, CreateCommitTransactionArgs, ExternalSigner, OrdParser,

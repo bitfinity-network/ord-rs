@@ -1,9 +1,9 @@
 pub mod brc20;
 pub mod nft;
 
-use crate::OrdResult;
-
 use bitcoin::script::PushBytesBuf;
+
+use crate::OrdResult;
 
 /// The inscription trait is used to write data to the redeem script of a commit and reveal transaction.
 pub trait Inscription {

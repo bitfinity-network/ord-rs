@@ -4,19 +4,17 @@ pub mod id;
 #[cfg(test)]
 mod nft_tests;
 
-use crate::{
-    utils::{self, bytes_to_push_bytes, constants},
-    Inscription, InscriptionParseError, OrdError, OrdResult,
-};
+use std::io::Cursor;
+use std::str::FromStr;
 
-use bitcoin::{
-    opcodes,
-    script::{Builder as ScriptBuilder, PushBytesBuf, ScriptBuf},
-};
+use bitcoin::opcodes;
+use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf, ScriptBuf};
 use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::{io::Cursor, str::FromStr};
+
+use crate::utils::{self, bytes_to_push_bytes, constants};
+use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
 
 /// Represents an arbitrary Ordinal inscription. We're "unofficially" referring to this as an NFT
 /// (e.g., like an ERC721 token). Ordinal inscriptions allow for the embedding of data directly
@@ -105,7 +103,9 @@ impl Nft {
                 std::str::from_utf8(content_type).map_err(OrdError::Utf8Encoding)?;
 
             if !content_type_str.contains('/') {
-                return Err(OrdError::InscriptionParser(InscriptionParseError::ContentType));
+                return Err(OrdError::InscriptionParser(
+                    InscriptionParseError::ContentType,
+                ));
             }
         }
 
@@ -236,9 +236,9 @@ impl FromStr for Nft {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use nft_tests::create_nft;
+
+    use super::*;
 
     #[test]
     fn nft_creation() {

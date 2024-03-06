@@ -1,22 +1,21 @@
 pub mod signer;
 mod taproot;
 
-use super::builder::taproot::{generate_keypair, TaprootPayload};
-use crate::{inscription::Inscription, utils::bytes_to_push_bytes, OrdError, OrdResult};
-
+use bitcoin::absolute::LockTime;
+use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
+use bitcoin::opcodes::{OP_0, OP_FALSE};
+use bitcoin::script::Builder as ScriptBuilder;
+use bitcoin::transaction::Version;
 use bitcoin::{
-    absolute::LockTime,
-    opcodes::{
-        all::{OP_CHECKSIG, OP_ENDIF, OP_IF},
-        OP_0, OP_FALSE,
-    },
-    script::Builder as ScriptBuilder,
-    secp256k1,
-    transaction::Version,
-    Address, Amount, Network, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
-    Txid, Witness, XOnlyPublicKey,
+    secp256k1, Address, Amount, Network, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction,
+    TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
 use signer::Wallet;
+
+use super::builder::taproot::{generate_keypair, TaprootPayload};
+use crate::inscription::Inscription;
+use crate::utils::bytes_to_push_bytes;
+use crate::{OrdError, OrdResult};
 
 const POSTAGE: u64 = 333;
 
@@ -316,12 +315,15 @@ pub struct TxInput {
 
 #[cfg(test)]
 mod test {
+    use std::cell::RefCell;
+    use std::str::FromStr;
+
+    use bitcoin::secp256k1::Secp256k1;
+    use bitcoin::PrivateKey;
+    use hex_literal::hex;
+
     use super::*;
     use crate::Brc20;
-
-    use bitcoin::{secp256k1::Secp256k1, PrivateKey};
-    use hex_literal::hex;
-    use std::{cell::RefCell, str::FromStr};
 
     thread_local! {
         // The derivation path to use for ECDSA secp256k1.
@@ -378,11 +380,17 @@ mod test {
 
         // check redeem script
         let redeem_script = &tx_result.redeem_script;
-        assert_eq!(redeem_script.as_bytes()[0], bitcoin::opcodes::all::OP_PUSHBYTES_33.to_u8());
+        assert_eq!(
+            redeem_script.as_bytes()[0],
+            bitcoin::opcodes::all::OP_PUSHBYTES_33.to_u8()
+        );
 
         // txin
         assert_eq!(tx_result.tx.input.len(), 1);
-        assert_eq!(tx_result.tx.input[0].sequence, Sequence::from_consensus(0xffffffff));
+        assert_eq!(
+            tx_result.tx.input[0].sequence,
+            Sequence::from_consensus(0xffffffff)
+        );
         assert_eq!(
             tx_result.tx.input[0].previous_output.txid,
             Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",)
@@ -422,8 +430,14 @@ mod test {
         );
 
         assert_eq!(reveal_transaction.output.len(), 1);
-        assert_eq!(reveal_transaction.output[0].value, Amount::from_sat(POSTAGE));
-        assert_eq!(reveal_transaction.output[0].script_pubkey, recipient_address.script_pubkey());
+        assert_eq!(
+            reveal_transaction.output[0].value,
+            Amount::from_sat(POSTAGE)
+        );
+        assert_eq!(
+            reveal_transaction.output[0].script_pubkey,
+            recipient_address.script_pubkey()
+        );
     }
 
     #[tokio::test]
@@ -467,13 +481,21 @@ mod test {
             hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
         );
 
-        let encoded_pubkey =
-            builder.taproot_payload.as_ref().unwrap().keypair.public_key().serialize();
+        let encoded_pubkey = builder
+            .taproot_payload
+            .as_ref()
+            .unwrap()
+            .keypair
+            .public_key()
+            .serialize();
         println!("{} {}", encoded_pubkey.len(), hex::encode(encoded_pubkey));
 
         // check redeem script contains pubkey for taproot
         let redeem_script = &tx_result.redeem_script;
-        assert_eq!(redeem_script.as_bytes()[0], bitcoin::opcodes::all::OP_PUSHBYTES_32.to_u8());
+        assert_eq!(
+            redeem_script.as_bytes()[0],
+            bitcoin::opcodes::all::OP_PUSHBYTES_32.to_u8()
+        );
 
         let tx_id = tx_result.tx.txid();
         let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")

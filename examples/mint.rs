@@ -1,15 +1,14 @@
 mod utils;
 
+use argh::FromArgs;
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::{Address, Network, PrivateKey};
+use log::{debug, info};
+use ord_rs::wallet::{CreateCommitTransactionArgs, RevealTransactionArgs};
+use ord_rs::{Brc20, OrdTransactionBuilder};
+
 use self::utils::rpc_client;
 use crate::utils::{calc_fees, Fees};
-
-use argh::FromArgs;
-use bitcoin::{secp256k1::Secp256k1, Address, Network, PrivateKey};
-use log::{debug, info};
-use ord_rs::{
-    wallet::{CreateCommitTransactionArgs, RevealTransactionArgs},
-    Brc20, OrdTransactionBuilder,
-};
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "Mint BRC20 tokens")]

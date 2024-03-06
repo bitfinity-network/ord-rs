@@ -1,6 +1,9 @@
-use crate::{error::InscriptionParseError, Inscription, OrdError, OrdResult};
+use bitcoin::blockdata::opcodes::all as all_opcodes;
+use bitcoin::script::Instruction;
+use bitcoin::{Script, Transaction};
 
-use bitcoin::{blockdata::opcodes::all as all_opcodes, script::Instruction, Script, Transaction};
+use crate::error::InscriptionParseError;
+use crate::{Inscription, OrdError, OrdResult};
 
 pub struct OrdParser;
 

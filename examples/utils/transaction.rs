@@ -60,8 +60,13 @@ pub fn spend_utxo_transaction(
         output: tx_out,
     };
 
-    let tx =
-        sign_transaction(unsigned_tx, private_key, &secp, inputs, &sender_address.script_pubkey())?;
+    let tx = sign_transaction(
+        unsigned_tx,
+        private_key,
+        &secp,
+        inputs,
+        &sender_address.script_pubkey(),
+    )?;
     Ok(tx)
 }
 
@@ -92,7 +97,9 @@ fn sign_transaction(
 
         // append witness to input
         let witness = Witness::p2wpkh(&signature, &secp_pubkey);
-        *hash.witness_mut(index).ok_or(OrdError::InputNotFound(index))? = witness;
+        *hash
+            .witness_mut(index)
+            .ok_or(OrdError::InputNotFound(index))? = witness;
     }
 
     Ok(hash.into_transaction())

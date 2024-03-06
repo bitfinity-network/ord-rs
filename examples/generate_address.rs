@@ -1,8 +1,11 @@
-use bitcoin::{secp256k1::Secp256k1, Address, Network};
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::{Address, Network};
 use rand::Rng as _;
 
 fn main() -> anyhow::Result<()> {
-    let args = std::env::args().map(|arg| arg.to_lowercase()).collect::<Vec<_>>();
+    let args = std::env::args()
+        .map(|arg| arg.to_lowercase())
+        .collect::<Vec<_>>();
 
     if args.len() != 2 {
         anyhow::bail!("Usage: generate_address <network>");

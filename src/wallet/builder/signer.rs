@@ -1,15 +1,16 @@
+use bitcoin::hashes::Hash as _;
+use bitcoin::key::Secp256k1;
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::{self, All};
+use bitcoin::sighash::{Prevouts, SighashCache};
+use bitcoin::taproot::{ControlBlock, LeafVersion};
+use bitcoin::{
+    PrivateKey, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, Transaction, Witness,
+};
+
 use super::super::builder::TxInput;
 use super::taproot::TaprootPayload;
 use crate::{OrdError, OrdResult};
-
-use bitcoin::{
-    hashes::Hash as _,
-    key::Secp256k1,
-    secp256k1::{self, ecdsa::Signature, All},
-    sighash::{Prevouts, SighashCache},
-    taproot::{ControlBlock, LeafVersion},
-    PrivateKey, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, Transaction, Witness,
-};
 
 /// An abstraction over a transaction signer.
 #[async_trait::async_trait]
@@ -61,8 +62,14 @@ impl Wallet {
         transaction: Transaction,
         txin_script: &ScriptBuf,
     ) -> OrdResult<Transaction> {
-        self.sign_ecdsa(own_pubkey, inputs, transaction, txin_script, TransactionType::Commit)
-            .await
+        self.sign_ecdsa(
+            own_pubkey,
+            inputs,
+            transaction,
+            txin_script,
+            TransactionType::Commit,
+        )
+        .await
     }
 
     pub async fn sign_reveal_transaction_ecdsa(
@@ -103,7 +110,8 @@ impl Wallet {
         let sig = self.secp.sign_schnorr_no_aux_rand(&msg, &taproot.keypair);
 
         // verify
-        self.secp.verify_schnorr(&sig, &msg, &taproot.keypair.x_only_public_key().0)?;
+        self.secp
+            .verify_schnorr(&sig, &msg, &taproot.keypair.x_only_public_key().0)?;
 
         // append witness
         let signature = bitcoin::taproot::Signature {
@@ -171,7 +179,8 @@ impl Wallet {
             // verify signature
             debug!("verifying signature");
 
-            self.secp.verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
+            self.secp
+                .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
             debug!("signature verified");
             // append witness
             let signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
@@ -233,7 +242,9 @@ impl Wallet {
         debug!("witness: {witness:?}");
 
         // append witness
-        *sighasher.witness_mut(index).ok_or(OrdError::InputNotFound(index))? = witness;
+        *sighasher
+            .witness_mut(index)
+            .ok_or(OrdError::InputNotFound(index))? = witness;
 
         Ok(())
     }

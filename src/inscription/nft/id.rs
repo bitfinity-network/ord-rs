@@ -1,8 +1,10 @@
-use crate::error::InscriptionParseError;
-
-use bitcoin::{hashes::Hash, Txid};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::str::FromStr;
+
+use bitcoin::hashes::Hash;
+use bitcoin::Txid;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::error::InscriptionParseError;
 
 #[derive(Debug, PartialEq, Copy, Clone, Hash, Eq, PartialOrd, Ord)]
 pub struct NftId {
@@ -19,7 +21,12 @@ impl NftId {
             index_slice = &index_slice[0..index_slice.len() - 1];
         }
 
-        self.txid.to_byte_array().iter().chain(index_slice).copied().collect()
+        self.txid
+            .to_byte_array()
+            .iter()
+            .chain(index_slice)
+            .copied()
+            .collect()
     }
 }
 
