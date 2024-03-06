@@ -29,4 +29,7 @@ pub use bitcoin;
 pub use error::{InscriptionParseError, OrdError};
 pub use inscription::{brc20::Brc20, nft::Nft, Inscription};
 pub use result::OrdResult;
-pub use wallet::{OrdParser, OrdTransactionBuilder};
+pub use wallet::{
+    CreateCommitTransaction, CreateCommitTransactionArgs, ExternalSigner, OrdParser,
+    OrdTransactionBuilder, RevealTransactionArgs, TxInput, Wallet, WalletType,
+};

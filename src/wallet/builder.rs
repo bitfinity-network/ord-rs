@@ -1,4 +1,4 @@
-mod signer;
+pub mod signer;
 mod taproot;
 
 use super::builder::taproot::{generate_keypair, TaprootPayload};
