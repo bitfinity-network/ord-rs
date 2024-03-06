@@ -65,13 +65,8 @@ async fn main() -> anyhow::Result<()> {
 
     // send UTXO to recipient
     debug!("getting spend-UTXO transaction");
-    let spend_utxo_transaction = spend_utxo_transaction(
-        &private_key,
-        recipient,
-        inscription_input.amount,
-        inputs,
-        fee,
-    )?;
+    let spend_utxo_transaction =
+        spend_utxo_transaction(&private_key, recipient, inscription_input.amount, inputs, fee)?;
     info!("spend-UTXO transaction: {}", spend_utxo_transaction.txid());
     debug!("spend-UTXO transaction: {spend_utxo_transaction:?}");
     // broadcast spend_utxo_transaction

@@ -61,14 +61,8 @@ impl Wallet {
         transaction: Transaction,
         txin_script: &ScriptBuf,
     ) -> OrdResult<Transaction> {
-        self.sign_ecdsa(
-            own_pubkey,
-            inputs,
-            transaction,
-            txin_script,
-            TransactionType::Commit,
-        )
-        .await
+        self.sign_ecdsa(own_pubkey, inputs, transaction, txin_script, TransactionType::Commit)
+            .await
     }
 
     pub async fn sign_reveal_transaction_ecdsa(
@@ -109,8 +103,7 @@ impl Wallet {
         let sig = self.secp.sign_schnorr_no_aux_rand(&msg, &taproot.keypair);
 
         // verify
-        self.secp
-            .verify_schnorr(&sig, &msg, &taproot.keypair.x_only_public_key().0)?;
+        self.secp.verify_schnorr(&sig, &msg, &taproot.keypair.x_only_public_key().0)?;
 
         // append witness
         let signature = bitcoin::taproot::Signature {
@@ -178,8 +171,7 @@ impl Wallet {
             // verify signature
             debug!("verifying signature");
 
-            self.secp
-                .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
+            self.secp.verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
             debug!("signature verified");
             // append witness
             let signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
@@ -241,9 +233,7 @@ impl Wallet {
         debug!("witness: {witness:?}");
 
         // append witness
-        *sighasher
-            .witness_mut(index)
-            .ok_or(OrdError::InputNotFound(index))? = witness;
+        *sighasher.witness_mut(index).ok_or(OrdError::InputNotFound(index))? = witness;
 
         Ok(())
     }

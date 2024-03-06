@@ -88,9 +88,7 @@ impl Nft {
                 std::str::from_utf8(content_type).map_err(OrdError::Utf8Encoding)?;
 
             if !content_type_str.contains('/') {
-                return Err(OrdError::InscriptionParser(
-                    InscriptionParseError::ContentType,
-                ));
+                return Err(OrdError::InscriptionParser(InscriptionParseError::ContentType));
             }
         }
 

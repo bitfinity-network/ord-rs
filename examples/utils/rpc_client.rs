@@ -20,11 +20,7 @@ pub async fn broadcast_transaction(
     let tx_hex = hex::encode(bitcoin::consensus::serialize(&transaction));
     debug!("tx_hex ({}): {tx_hex}", tx_hex.len());
 
-    let result = reqwest::Client::new()
-        .post(&url)
-        .body(tx_hex)
-        .send()
-        .await?;
+    let result = reqwest::Client::new().post(&url).body(tx_hex).send().await?;
 
     debug!("result: {:?}", result);
 
@@ -33,10 +29,7 @@ pub async fn broadcast_transaction(
         debug!("txid: {txid}");
         Ok(Txid::from_str(&txid)?)
     } else {
-        Err(anyhow::anyhow!(
-            "failed to broadcast transaction: {}",
-            result.text().await?
-        ))
+        Err(anyhow::anyhow!("failed to broadcast transaction: {}", result.text().await?))
     }
 }
 

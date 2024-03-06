@@ -19,12 +19,7 @@ impl NftId {
             index_slice = &index_slice[0..index_slice.len() - 1];
         }
 
-        self.txid
-            .to_byte_array()
-            .iter()
-            .chain(index_slice)
-            .copied()
-            .collect()
+        self.txid.to_byte_array().iter().chain(index_slice).copied().collect()
     }
 }
 
