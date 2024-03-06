@@ -327,227 +327,208 @@ pub struct TxInput {
     pub amount: Amount,
 }
 
-// #[cfg(test)]
-// mod test {
-//     use std::{cell::RefCell, future::Future, pin::Pin, str::FromStr};
+#[cfg(test)]
+mod test {
+    use bitcoin::{secp256k1::Secp256k1, PrivateKey};
+    use bitcoin::{Address, Amount, Network, Sequence, Txid};
+    use hex_literal::hex;
+    use std::{cell::RefCell, str::FromStr};
 
-//     use bitcoin::{secp256k1::Secp256k1, PrivateKey};
-//     use bitcoin::{Address, Amount, Network, Sequence, Txid};
-//     use hex_literal::hex;
+    use super::*;
+    use crate::inscription::brc20::Brc20;
 
-//     use super::*;
-//     use crate::{inscription::brc20::Brc20, wallet::builder::signer2::WalletType};
+    thread_local! {
+        // The derivation path to use for ECDSA secp256k1.
+        static DERIVATION_PATH: Vec<Vec<u8>> = vec![];
 
-//     thread_local! {
-//         // The derivation path to use for ECDSA secp256k1.
-//         static DERIVATION_PATH: Vec<Vec<u8>> = vec![];
+        // The ECDSA key name.
+        static KEY_NAME: RefCell<String> = RefCell::new(String::from(""));
+    }
 
-//         // The ECDSA key name.
-//         static KEY_NAME: RefCell<String> = RefCell::new(String::from(""));
-//     }
+    // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
+    const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
-//     // Mock function to mimic signing behavior
-//     fn mock_signer_method(
-//         _key_name: String,
-//         _derivation_path: Vec<Vec<u8>>,
-//         _msg_hash: Vec<u8>,
-//     ) -> Pin<Box<dyn Future<Output = Vec<u8>>>> {
-//         Box::pin(async { Vec::new() })
-//     }
+    #[tokio::test]
+    async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2wsh() {
+        // this test refers to these testnet transactions, commit and reveal:
+        // <https://mempool.space/testnet/tx/4472899344bce1a6c83c6ec45859f79ab622b55b3faf67e555e3e03cee5139e6>
+        // <https://mempool.space/testnet/tx/c769750df54ee38fe2bae876dbf1632c779c3af780958a19cee1ca0497c78e80>
+        // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
+        let private_key = PrivateKey::from_wif(WIF).unwrap();
+        let public_key = private_key.public_key(&Secp256k1::new());
+        let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
 
-//     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
-//     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
+        let mut builder = OrdTransactionBuilder::p2wsh(private_key);
 
-//     #[tokio::test]
-//     async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2wsh() {
-//         // this test refers to these testnet transactions, commit and reveal:
-//         // <https://mempool.space/testnet/tx/4472899344bce1a6c83c6ec45859f79ab622b55b3faf67e555e3e03cee5139e6>
-//         // <https://mempool.space/testnet/tx/c769750df54ee38fe2bae876dbf1632c779c3af780958a19cee1ca0497c78e80>
-//         // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
-//         let private_key = PrivateKey::from_wif(WIF).unwrap();
-//         let public_key = private_key.public_key(&Secp256k1::new());
-//         let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
+        let commit_transaction_args = CreateCommitTransactionArgs {
+            utxos: vec![TxInput {
+                id: Txid::from_str(
+                    "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
+                )
+                .unwrap(), // the transaction that funded our wallet
+                index: 1,
+                amount: Amount::from_sat(8_000),
+            }],
+            txin_script_pubkey: address.script_pubkey(),
+            inscription: Brc20::transfer("mona".to_string(), 100),
+            leftovers_recipient: address.clone(),
+            commit_fee: Amount::from_sat(2_500),
+            reveal_fee: Amount::from_sat(4_700),
+        };
+        let tx_result = builder
+            .build_commit_transaction(Network::Testnet, commit_transaction_args)
+            .await
+            .unwrap();
 
-//         let wallet_type: WalletType<_> = WalletType::LocalWallet { private_key };
+        assert!(builder.taproot_payload.is_none());
 
-//         let wallet: Wallet<_> = Wallet::new_with_signer(
-//             Secp256k1::new(),
-//             Some("key_name".to_string()),
-//             None,
-//             wallet_type,
-//         );
+        let witness = tx_result.tx.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 2);
+        assert_eq!(witness[0], hex!("30440220708c02ce8166b739f4190bf98538c897f676adc1304bb368ebe910f817fd489602205d708a826b416c2852a6bd7ea464fde8ef3a08eb2fc085ec9e71ed71f6dc582901"));
+        assert_eq!(
+            witness[1],
+            hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
+        );
 
-//         let mut builder = OrdTransactionBuilder::new(public_key, ScriptType::P2WSH, wallet);
+        // check redeem script
+        let redeem_script = &tx_result.redeem_script;
+        assert_eq!(
+            redeem_script.as_bytes()[0],
+            bitcoin::opcodes::all::OP_PUSHBYTES_33.to_u8()
+        );
 
-//         let commit_transaction_args = CreateCommitTransactionArgs {
-//             utxos: vec![TxInput {
-//                 id: Txid::from_str(
-//                     "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
-//                 )
-//                 .unwrap(), // the transaction that funded our wallet
-//                 index: 1,
-//                 amount: Amount::from_sat(8_000),
-//             }],
-//             txin_script_pubkey: address.script_pubkey(),
-//             inscription: Brc20::transfer("mona".to_string(), 100),
-//             leftovers_recipient: address.clone(),
-//             commit_fee: Amount::from_sat(2_500),
-//             reveal_fee: Amount::from_sat(4_700),
-//         };
-//         let tx_result = builder
-//             .build_commit_transaction(Network::Testnet, commit_transaction_args)
-//             .await
-//             .unwrap();
+        // txin
+        assert_eq!(tx_result.tx.input.len(), 1);
+        assert_eq!(
+            tx_result.tx.input[0].sequence,
+            Sequence::from_consensus(0xffffffff)
+        );
+        assert_eq!(
+            tx_result.tx.input[0].previous_output.txid,
+            Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",)
+                .unwrap()
+        );
 
-//         assert!(builder.taproot_payload.is_none());
+        // txout
+        assert_eq!(tx_result.tx.output.len(), 2);
+        assert_eq!(tx_result.tx.output[0].value, Amount::from_sat(5_033));
+        assert_eq!(tx_result.tx.output[1].value, Amount::from_sat(467));
 
-//         let witness = tx_result.tx.input[0].witness.clone().to_vec();
-//         assert_eq!(witness.len(), 2);
-//         assert_eq!(witness[0], hex!("30440220708c02ce8166b739f4190bf98538c897f676adc1304bb368ebe910f817fd489602205d708a826b416c2852a6bd7ea464fde8ef3a08eb2fc085ec9e71ed71f6dc582901"));
-//         assert_eq!(
-//             witness[1],
-//             hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
-//         );
+        let tx_id = tx_result.tx.txid();
+        let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
 
-//         // check redeem script
-//         let redeem_script = &tx_result.redeem_script;
-//         assert_eq!(
-//             redeem_script.as_bytes()[0],
-//             bitcoin::opcodes::all::OP_PUSHBYTES_33.to_u8()
-//         );
+        let reveal_transaction = builder
+            .build_reveal_transaction(RevealTransactionArgs {
+                input: TxInput {
+                    id: tx_id,
+                    index: 0,
+                    amount: tx_result.reveal_balance,
+                },
+                recipient_address: recipient_address.clone(),
+                redeem_script: tx_result.redeem_script,
+            })
+            .await
+            .unwrap();
 
-//         // txin
-//         assert_eq!(tx_result.tx.input.len(), 1);
-//         assert_eq!(
-//             tx_result.tx.input[0].sequence,
-//             Sequence::from_consensus(0xffffffff)
-//         );
-//         assert_eq!(
-//             tx_result.tx.input[0].previous_output.txid,
-//             Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",)
-//                 .unwrap()
-//         );
+        let witness = reveal_transaction.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 2);
+        assert_eq!(witness[0], hex!("3045022100a377f8dc92b903a99c39113d834013e231fbe82caf148fe23ae895fdbb0b04a002203b8dcc738ea682e4931ae752ac57883b85f31e9bea9641974488dfd32e2bb48201"));
+        assert_eq!(
+            witness[1],
+            hex!("2102d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240ac0063036f7264010118746578742f706c61696e3b636861727365743d7574662d3800387b226f70223a227472616e73666572222c2270223a226272632d3230222c227469636b223a226d6f6e61222c22616d74223a22313030227d68")
+        );
 
-//         // txout
-//         assert_eq!(tx_result.tx.output.len(), 2);
-//         assert_eq!(tx_result.tx.output[0].value, Amount::from_sat(5_033));
-//         assert_eq!(tx_result.tx.output[1].value, Amount::from_sat(467));
+        assert_eq!(reveal_transaction.output.len(), 1);
+        assert_eq!(
+            reveal_transaction.output[0].value,
+            Amount::from_sat(POSTAGE)
+        );
+        assert_eq!(
+            reveal_transaction.output[0].script_pubkey,
+            recipient_address.script_pubkey()
+        );
+    }
 
-//         let tx_id = tx_result.tx.txid();
-//         let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
-//             .unwrap()
-//             .require_network(Network::Testnet)
-//             .unwrap();
+    #[tokio::test]
+    async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
+        // this test refers to these testnet transactions, commit and reveal:
+        // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
+        // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
+        // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
+        let private_key = PrivateKey::from_wif(WIF).unwrap();
+        let public_key = private_key.public_key(&Secp256k1::new());
+        let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
 
-//         let reveal_transaction = builder
-//             .build_reveal_transaction(RevealTransactionArgs {
-//                 input: TxInput {
-//                     id: tx_id,
-//                     index: 0,
-//                     amount: tx_result.reveal_balance,
-//                 },
-//                 recipient_address: recipient_address.clone(),
-//                 redeem_script: tx_result.redeem_script,
-//             })
-//             .await
-//             .unwrap();
+        let mut builder = OrdTransactionBuilder::p2tr(private_key);
 
-//         let witness = reveal_transaction.input[0].witness.clone().to_vec();
-//         assert_eq!(witness.len(), 2);
-//         assert_eq!(witness[0], hex!("3045022100a377f8dc92b903a99c39113d834013e231fbe82caf148fe23ae895fdbb0b04a002203b8dcc738ea682e4931ae752ac57883b85f31e9bea9641974488dfd32e2bb48201"));
-//         assert_eq!(
-//             witness[1],
-//             hex!("2102d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240ac0063036f7264010118746578742f706c61696e3b636861727365743d7574662d3800387b226f70223a227472616e73666572222c2270223a226272632d3230222c227469636b223a226d6f6e61222c22616d74223a22313030227d68")
-//         );
+        let commit_transaction_args = CreateCommitTransactionArgs {
+            utxos: vec![TxInput {
+                id: Txid::from_str(
+                    "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
+                )
+                .unwrap(), // the transaction that funded our walle
+                index: 1,
+                amount: Amount::from_sat(8_000),
+            }],
+            txin_script_pubkey: address.script_pubkey(),
+            inscription: Brc20::transfer("mona".to_string(), 100),
+            leftovers_recipient: address.clone(),
+            commit_fee: Amount::from_sat(2_500),
+            reveal_fee: Amount::from_sat(4_700),
+        };
+        let tx_result = builder
+            .build_commit_transaction(Network::Testnet, commit_transaction_args)
+            .await
+            .unwrap();
 
-//         assert_eq!(reveal_transaction.output.len(), 1);
-//         assert_eq!(
-//             reveal_transaction.output[0].value,
-//             Amount::from_sat(POSTAGE)
-//         );
-//         assert_eq!(
-//             reveal_transaction.output[0].script_pubkey,
-//             recipient_address.script_pubkey()
-//         );
-//     }
+        assert!(builder.taproot_payload.is_some());
 
-//     #[tokio::test]
-//     async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
-//         // this test refers to these testnet transactions, commit and reveal:
-//         // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
-//         // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
-//         // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
-//         let private_key = PrivateKey::from_wif(WIF).unwrap();
-//         let public_key = private_key.public_key(&Secp256k1::new());
-//         let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
+        let witness = tx_result.tx.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 2);
+        assert_eq!(
+            witness[1],
+            hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
+        );
 
-//         let mut builder = OrdTransactionBuilder::p2tr(private_key);
+        let encoded_pubkey = builder
+            .taproot_payload
+            .as_ref()
+            .unwrap()
+            .keypair
+            .public_key()
+            .serialize();
+        println!("{} {}", encoded_pubkey.len(), hex::encode(encoded_pubkey));
 
-//         let commit_transaction_args = CreateCommitTransactionArgs {
-//             utxos: vec![TxInput {
-//                 id: Txid::from_str(
-//                     "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
-//                 )
-//                 .unwrap(), // the transaction that funded our walle
-//                 index: 1,
-//                 amount: Amount::from_sat(8_000),
-//             }],
-//             txin_script_pubkey: address.script_pubkey(),
-//             inscription: Brc20::transfer("mona".to_string(), 100),
-//             leftovers_recipient: address.clone(),
-//             commit_fee: Amount::from_sat(2_500),
-//             reveal_fee: Amount::from_sat(4_700),
-//         };
-//         let tx_result = builder
-//             .build_commit_transaction(Network::Testnet, commit_transaction_args)
-//             .await
-//             .unwrap();
+        // check redeem script contains pubkey for taproot
+        let redeem_script = &tx_result.redeem_script;
+        assert_eq!(
+            redeem_script.as_bytes()[0],
+            bitcoin::opcodes::all::OP_PUSHBYTES_32.to_u8()
+        );
 
-//         assert!(builder.taproot_payload.is_some());
+        let tx_id = tx_result.tx.txid();
+        let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
 
-//         let witness = tx_result.tx.input[0].witness.clone().to_vec();
-//         assert_eq!(witness.len(), 2);
-//         assert_eq!(
-//             witness[1],
-//             hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
-//         );
+        let reveal_transaction = builder
+            .build_reveal_transaction(RevealTransactionArgs {
+                input: TxInput {
+                    id: tx_id,
+                    index: 0,
+                    amount: tx_result.reveal_balance,
+                },
+                recipient_address: recipient_address.clone(),
+                redeem_script: tx_result.redeem_script,
+            })
+            .await
+            .unwrap();
 
-//         let encoded_pubkey = builder
-//             .taproot_payload
-//             .as_ref()
-//             .unwrap()
-//             .keypair
-//             .public_key()
-//             .serialize();
-//         println!("{} {}", encoded_pubkey.len(), hex::encode(encoded_pubkey));
-
-//         // check redeem script contains pubkey for taproot
-//         let redeem_script = &tx_result.redeem_script;
-//         assert_eq!(
-//             redeem_script.as_bytes()[0],
-//             bitcoin::opcodes::all::OP_PUSHBYTES_32.to_u8()
-//         );
-
-//         let tx_id = tx_result.tx.txid();
-//         let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
-//             .unwrap()
-//             .require_network(Network::Testnet)
-//             .unwrap();
-
-//         let reveal_transaction = builder
-//             .build_reveal_transaction(RevealTransactionArgs {
-//                 input: TxInput {
-//                     id: tx_id,
-//                     index: 0,
-//                     amount: tx_result.reveal_balance,
-//                 },
-//                 recipient_address: recipient_address.clone(),
-//                 redeem_script: tx_result.redeem_script,
-//             })
-//             .await
-//             .unwrap();
-
-//         let witness = reveal_transaction.input[0].witness.clone().to_vec();
-//         assert_eq!(witness.len(), 3);
-//     }
-// }
+        let witness = reveal_transaction.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 3);
+    }
+}
