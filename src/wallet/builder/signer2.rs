@@ -192,7 +192,7 @@ impl Wallet {
                 }
             };
 
-            let signature = Signature::from_compact(&signature)?;
+            let signature = Signature::from_der(&signature)?;
             debug!("signature: {}", signature.serialize_der());
             // verify signature
             debug!("verifying signature");
