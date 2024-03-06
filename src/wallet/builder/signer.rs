@@ -22,22 +22,6 @@ pub trait ExternalSigner {
     ) -> Vec<u8>;
 }
 
-#[async_trait::async_trait]
-impl<F, Fut> ExternalSigner for F
-where
-    F: Send + Sync + Fn(String, Vec<Vec<u8>>, Vec<u8>) -> Fut,
-    Fut: std::future::Future<Output = Vec<u8>> + Send,
-{
-    async fn sign(
-        &self,
-        key_name: String,
-        derivation_path: Vec<Vec<u8>>,
-        message_hash: Vec<u8>,
-    ) -> Vec<u8> {
-        self(key_name, derivation_path, message_hash).await
-    }
-}
-
 /// Types of signers.
 pub enum WalletType {
     Local {
