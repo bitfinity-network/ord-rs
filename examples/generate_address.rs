@@ -1,5 +1,4 @@
-use bitcoin::secp256k1::Secp256k1;
-use bitcoin::{Address, Network};
+use bitcoin::{secp256k1::Secp256k1, Address, Network};
 use rand::Rng as _;
 
 fn main() -> anyhow::Result<()> {

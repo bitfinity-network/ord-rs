@@ -1,15 +1,12 @@
 mod utils;
 
-use std::str::FromStr;
+use self::utils::rpc_client;
+use crate::utils::{calc_fees, transaction::spend_utxo_transaction};
 
 use argh::FromArgs;
-use bitcoin::secp256k1::Secp256k1;
-use bitcoin::{Address, Network, PrivateKey};
+use bitcoin::{secp256k1::Secp256k1, Address, Network, PrivateKey};
 use log::{debug, info};
-
-use self::utils::rpc_client;
-use crate::utils::calc_fees;
-use crate::utils::transaction::spend_utxo_transaction;
+use std::str::FromStr;
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "Transfer BRC20 tokens")]

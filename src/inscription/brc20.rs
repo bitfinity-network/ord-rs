@@ -1,11 +1,8 @@
-use std::str::FromStr;
+use crate::{utils::bytes_to_push_bytes, Inscription, InscriptionParseError, OrdError, OrdResult};
 
 use bitcoin::script::PushBytesBuf;
 use serde_with::{serde_as, DisplayFromStr};
-
-use crate::inscription::Inscription;
-use crate::utils::bytes_to_push_bytes;
-use crate::{InscriptionParseError, OrdError, OrdResult};
+use std::str::FromStr;
 
 const PROTOCOL: &str = "brc-20";
 

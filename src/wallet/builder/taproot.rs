@@ -1,9 +1,11 @@
-use bitcoin::key::UntweakedKeypair;
-use bitcoin::secp256k1::{All, Secp256k1};
-use bitcoin::taproot::{ControlBlock, LeafVersion, TaprootBuilder, TaprootSpendInfo};
-use bitcoin::{Address, Amount, Network, ScriptBuf, TxOut, XOnlyPublicKey};
-
 use crate::{OrdError, OrdResult};
+
+use bitcoin::{
+    key::UntweakedKeypair,
+    secp256k1::{All, Secp256k1},
+    taproot::{ControlBlock, LeafVersion, TaprootBuilder, TaprootSpendInfo},
+    {Address, Amount, Network, ScriptBuf, TxOut, XOnlyPublicKey},
+};
 
 #[derive(Debug)]
 pub struct TaprootPayload {

@@ -1,9 +1,8 @@
-use std::str::FromStr;
+use crate::error::InscriptionParseError;
 
 use bitcoin::{hashes::Hash, Txid};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-use crate::error::InscriptionParseError;
+use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Copy, Clone, Hash, Eq, PartialOrd, Ord)]
 pub struct NftId {

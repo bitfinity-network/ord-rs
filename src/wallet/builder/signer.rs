@@ -1,87 +1,119 @@
-use bitcoin::hashes::Hash as _;
-use bitcoin::secp256k1::{All, Secp256k1};
-use bitcoin::sighash::{Prevouts, SighashCache};
-use bitcoin::taproot::{ControlBlock, LeafVersion};
-use bitcoin::{
-    secp256k1, PrivateKey, ScriptBuf, TapLeafHash, TapSighashType, Transaction, Witness,
-};
-
+use super::super::builder::TxInput;
 use super::taproot::TaprootPayload;
-use super::TxInput;
 use crate::{OrdError, OrdResult};
 
-/// Type of the transaction to sign
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TransactionType {
-    Commit,
-    Reveal,
+use bitcoin::{
+    hashes::Hash as _,
+    key::Secp256k1,
+    secp256k1::{self, ecdsa::Signature, All},
+    sighash::{Prevouts, SighashCache},
+    taproot::{ControlBlock, LeafVersion},
+    PrivateKey, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, Transaction, Witness,
+};
+
+/// An abstraction over a transaction signer.
+#[async_trait::async_trait]
+pub trait ExternalSigner {
+    async fn sign(
+        &self,
+        key_name: String,
+        derivation_path: Vec<Vec<u8>>,
+        message_hash: Vec<u8>,
+    ) -> Vec<u8>;
 }
 
-enum Signature {
-    Schnorr(bitcoin::taproot::Signature),
-    Ecdsa(bitcoin::ecdsa::Signature),
-}
-
-impl From<bitcoin::taproot::Signature> for Signature {
-    fn from(sig: bitcoin::taproot::Signature) -> Self {
-        Self::Schnorr(sig)
+#[async_trait::async_trait]
+impl<F, Fut> ExternalSigner for F
+where
+    F: Send + Sync + Fn(String, Vec<Vec<u8>>, Vec<u8>) -> Fut,
+    Fut: std::future::Future<Output = Vec<u8>> + Send,
+{
+    async fn sign(
+        &self,
+        key_name: String,
+        derivation_path: Vec<Vec<u8>>,
+        message_hash: Vec<u8>,
+    ) -> Vec<u8> {
+        self(key_name, derivation_path, message_hash).await
     }
 }
 
-impl From<bitcoin::ecdsa::Signature> for Signature {
-    fn from(sig: bitcoin::ecdsa::Signature) -> Self {
-        Self::Ecdsa(sig)
-    }
+/// Types of signers.
+pub enum WalletType {
+    Local {
+        private_key: PrivateKey,
+    },
+    External {
+        signer: Box<dyn ExternalSigner + Send + Sync>,
+    },
 }
 
-/// Transaction signer
-pub struct Signer<'a> {
-    private_key: &'a PrivateKey,
-    secp: &'a Secp256k1<All>,
-    transaction: Transaction,
+/// An Ordinal-aware Bitcoin wallet.
+pub struct Wallet {
+    secp: Secp256k1<All>,
+    pub key_name: Option<String>,
+    pub derivation_path: Option<Vec<Vec<u8>>>,
+    pub wallet_type: WalletType,
 }
 
-impl<'a> Signer<'a> {
-    pub fn new(
-        private_key: &'a PrivateKey,
-        secp: &'a Secp256k1<All>,
-        transaction: Transaction,
+impl Wallet {
+    pub fn new_with_signer(
+        key_name: Option<String>,
+        derivation_path: Option<Vec<Vec<u8>>>,
+        wallet_type: WalletType,
     ) -> Self {
         Self {
-            private_key,
-            secp,
-            transaction,
+            secp: Secp256k1::new(),
+            key_name,
+            derivation_path,
+            wallet_type,
         }
     }
 
-    /// Sign the commit transaction with the given txin script
-    pub fn sign_commit_transaction(
+    pub async fn sign_commit_transaction(
         &mut self,
+        own_pubkey: &PublicKey,
         inputs: &[TxInput],
+        transaction: Transaction,
         txin_script: &ScriptBuf,
     ) -> OrdResult<Transaction> {
-        self.sign_ecdsa(inputs, txin_script, TransactionType::Commit)
+        self.sign_ecdsa(
+            own_pubkey,
+            inputs,
+            transaction,
+            txin_script,
+            TransactionType::Commit,
+        )
+        .await
     }
 
-    /// Sign the reveal transaction with the given redeem script using ECDSA (for P2WSH)
-    pub fn sign_reveal_transaction_ecdsa(
+    pub async fn sign_reveal_transaction_ecdsa(
         &mut self,
+        own_pubkey: &PublicKey,
         input: &TxInput,
-        redeem_script: &ScriptBuf,
+        transaction: Transaction,
+        redeem_script: &bitcoin::ScriptBuf,
     ) -> OrdResult<Transaction> {
-        self.sign_ecdsa(&[input.clone()], redeem_script, TransactionType::Reveal)
+        self.sign_ecdsa(
+            own_pubkey,
+            &[input.clone()],
+            transaction,
+            redeem_script,
+            TransactionType::Reveal,
+        )
+        .await
     }
 
-    /// Sign the reveal transaction with the given redeem script (for P2TR)
     pub fn sign_reveal_transaction_schnorr(
         &mut self,
         taproot: &TaprootPayload,
         redeem_script: &ScriptBuf,
+        transaction: Transaction,
     ) -> OrdResult<Transaction> {
         let prevouts_array = vec![taproot.prevouts.clone()];
         let prevouts = Prevouts::All(&prevouts_array);
 
-        let mut sighash_cache = SighashCache::new(self.transaction.clone());
+        let mut sighash_cache = SighashCache::new(transaction.clone());
         let sighash_sig = sighash_cache.taproot_script_spend_signature_hash(
             0,
             &prevouts,
@@ -114,14 +146,16 @@ impl<'a> Signer<'a> {
         Ok(sighash_cache.into_transaction())
     }
 
-    fn sign_ecdsa(
+    async fn sign_ecdsa(
         &mut self,
-        inputs: &[TxInput],
+        own_pubkey: &PublicKey,
+        utxos: &[TxInput],
+        transaction: Transaction,
         script: &ScriptBuf,
         transaction_type: TransactionType,
     ) -> OrdResult<Transaction> {
-        let mut hash = SighashCache::new(self.transaction.clone());
-        for (index, input) in inputs.iter().enumerate() {
+        let mut hash = SighashCache::new(transaction.clone());
+        for (index, input) in utxos.iter().enumerate() {
             let signature_hash = match transaction_type {
                 TransactionType::Commit => hash.p2wpkh_signature_hash(
                     index,
@@ -138,26 +172,50 @@ impl<'a> Signer<'a> {
             };
 
             let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
-            let signature = self.secp.sign_ecdsa(&message, &self.private_key.inner);
-            debug!("signature: {}", signature.serialize_der());
 
-            let pubkey = self.private_key.inner.public_key(self.secp);
+            let signature = match &self.wallet_type {
+                WalletType::External { signer } => {
+                    signer
+                        .sign(
+                            self.key_name.clone().unwrap(),
+                            self.derivation_path.clone().unwrap(),
+                            signature_hash.as_byte_array().to_vec(),
+                        )
+                        .await
+                }
+                WalletType::Local { private_key } => {
+                    let sig = self.secp.sign_ecdsa(&message, &private_key.inner);
+                    sig.serialize_der().to_vec()
+                }
+            };
+
+            let signature = Signature::from_der(&signature)?;
+            debug!("signature: {}", signature.serialize_der());
             // verify signature
             debug!("verifying signature");
-            self.secp.verify_ecdsa(&message, &signature, &pubkey)?;
+
+            self.secp
+                .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
             debug!("signature verified");
             // append witness
             let signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
             match transaction_type {
                 TransactionType::Commit => {
-                    self.append_witness_to_input(&mut hash, signature, index, &pubkey, None, None)?;
+                    self.append_witness_to_input(
+                        &mut hash,
+                        signature,
+                        index,
+                        &own_pubkey.inner,
+                        None,
+                        None,
+                    )?;
                 }
                 TransactionType::Reveal => {
                     self.append_witness_to_input(
                         &mut hash,
                         signature,
                         index,
-                        &pubkey,
+                        &own_pubkey.inner,
                         Some(script),
                         None,
                     )?;
@@ -168,13 +226,12 @@ impl<'a> Signer<'a> {
         Ok(hash.into_transaction())
     }
 
-    /// Build and append witness to the transaction input
     fn append_witness_to_input(
         &self,
         sighasher: &mut SighashCache<Transaction>,
-        signature: Signature,
+        signature: OrdSignature,
         index: usize,
-        pubkey: &bitcoin::secp256k1::PublicKey,
+        pubkey: &secp256k1::PublicKey,
         redeem_script: Option<&ScriptBuf>,
         control_block: Option<&ControlBlock>,
     ) -> OrdResult<()> {
@@ -182,8 +239,8 @@ impl<'a> Signer<'a> {
         let witness = if let Some(redeem_script) = redeem_script {
             let mut witness = Witness::new();
             match signature {
-                Signature::Ecdsa(signature) => witness.push_ecdsa_signature(&signature),
-                Signature::Schnorr(signature) => witness.push(signature.to_vec()),
+                OrdSignature::Ecdsa(signature) => witness.push_ecdsa_signature(&signature),
+                OrdSignature::Schnorr(signature) => witness.push(signature.to_vec()),
             }
             witness.push(redeem_script.as_bytes());
             if let Some(control_block) = control_block {
@@ -193,8 +250,8 @@ impl<'a> Signer<'a> {
         } else {
             // otherwise, push pubkey
             match signature {
-                Signature::Ecdsa(signature) => Witness::p2wpkh(&signature, pubkey),
-                Signature::Schnorr(_) => return Err(OrdError::UnexpectedSignature),
+                OrdSignature::Ecdsa(signature) => Witness::p2wpkh(&signature, pubkey),
+                OrdSignature::Schnorr(_) => return Err(OrdError::UnexpectedSignature),
             }
         };
         debug!("witness: {witness:?}");
@@ -205,5 +262,29 @@ impl<'a> Signer<'a> {
             .ok_or(OrdError::InputNotFound(index))? = witness;
 
         Ok(())
+    }
+}
+
+/// Type of the transaction to sign
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransactionType {
+    Commit,
+    Reveal,
+}
+
+enum OrdSignature {
+    Schnorr(bitcoin::taproot::Signature),
+    Ecdsa(bitcoin::ecdsa::Signature),
+}
+
+impl From<bitcoin::taproot::Signature> for OrdSignature {
+    fn from(sig: bitcoin::taproot::Signature) -> Self {
+        Self::Schnorr(sig)
+    }
+}
+
+impl From<bitcoin::ecdsa::Signature> for OrdSignature {
+    fn from(sig: bitcoin::ecdsa::Signature) -> Self {
+        Self::Ecdsa(sig)
     }
 }
