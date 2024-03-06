@@ -288,34 +288,22 @@ impl OrdTransactionBuilder {
 
     /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2TR as script type (preferred).
     #[cfg(test)]
-    #[allow(unused)]
     pub(crate) fn p2tr(private_key: bitcoin::PrivateKey) -> Self {
         use super::builder::signer2::WalletType;
 
         let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
-        let wallet = Wallet::new_with_signer(
-            secp256k1::Secp256k1::new(),
-            None,
-            None,
-            WalletType::Local { private_key },
-        );
+        let wallet = Wallet::new_with_signer(None, None, WalletType::Local { private_key });
         Self::new(public_key, ScriptType::P2TR, wallet)
     }
 
     /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2WSH as script type.
     /// P2WSH may not be supported by all the indexers, so P2TR should be preferred.
     #[cfg(test)]
-    #[allow(unused)]
     pub(crate) fn p2wsh(private_key: bitcoin::PrivateKey) -> Self {
         use super::builder::signer2::WalletType;
 
         let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
-        let wallet = Wallet::new_with_signer(
-            secp256k1::Secp256k1::new(),
-            None,
-            None,
-            WalletType::Local { private_key },
-        );
+        let wallet = Wallet::new_with_signer(None, None, WalletType::Local { private_key });
         Self::new(public_key, ScriptType::P2WSH, wallet)
     }
 }

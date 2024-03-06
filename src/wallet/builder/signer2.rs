@@ -54,20 +54,19 @@ pub enum WalletType {
 /// An Ordinal-aware Bitcoin wallet.
 pub struct Wallet {
     secp: Secp256k1<All>,
-    key_name: Option<String>,
-    derivation_path: Option<Vec<Vec<u8>>>,
-    pub(crate) wallet_type: WalletType,
+    pub key_name: Option<String>,
+    pub derivation_path: Option<Vec<Vec<u8>>>,
+    pub wallet_type: WalletType,
 }
 
 impl Wallet {
     pub fn new_with_signer(
-        secp: Secp256k1<All>,
         key_name: Option<String>,
         derivation_path: Option<Vec<Vec<u8>>>,
         wallet_type: WalletType,
     ) -> Self {
         Self {
-            secp,
+            secp: Secp256k1::new(),
             key_name,
             derivation_path,
             wallet_type,
