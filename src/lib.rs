@@ -23,8 +23,6 @@ mod error;
 pub mod inscription;
 mod result;
 mod utils;
-
-pub(crate) mod constants;
 pub mod wallet;
 
 pub use bitcoin;

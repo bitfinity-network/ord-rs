@@ -4,9 +4,9 @@ Ordinal-aware Bitcoin inscriptions wallet and indexer.
 
 ## Modules
 
-- [inscription](/src/inscription): `Brc20` and `Nft` inscription types.
-- [wallet](/src/wallet): Transaction builder and processor.
-- [indexer](/src/indexer): Scans the Bitcoin blockchain to catalog, organize, and provide information about Ordinal inscriptions.
+- [inscription](src/inscription.rs): `Brc20` and `Nft` inscription types.
+- [wallet](src/wallet.rs): Transaction builder, signer, and parser.
+- [indexer](src/indexer.rs): Scans the Bitcoin blockchain to catalog, organize, and provide information about Ordinal inscriptions.
 
 ## TODO
 
@@ -115,6 +115,11 @@ let transaction = get_transaction_by_id(
 let inscription: Brc20 = OrdParser::parse(&transaction).unwrap().unwrap();
 assert_eq!(inscription, Brc20::transfer("mona", 100));
 ```
+
+## References
+
+- [Ordinal Theory](https://docs.ordinals.com/inscriptions.html)
+- [BRC-20 Standard](https://domo-2.gitbook.io/brc-20-experiment/)
 
 ## License
 

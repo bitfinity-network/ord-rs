@@ -10,7 +10,7 @@ documentation = "https://docs.rs/ord-rs"
 edition = "2021"
 
 [dependencies]
-async-trait = "0.1.77"
+async-trait = "0.1"
 bitcoin = { version = "0.31", features = ["rand"] }
 ciborium = "0.2"
 http = "1"

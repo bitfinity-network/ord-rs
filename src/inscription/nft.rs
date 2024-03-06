@@ -5,8 +5,7 @@ pub mod id;
 mod nft_tests;
 
 use crate::{
-    constants,
-    utils::{self, bytes_to_push_bytes},
+    utils::{self, bytes_to_push_bytes, constants},
     Inscription, InscriptionParseError, OrdError, OrdResult,
 };
 
