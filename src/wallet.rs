@@ -4,6 +4,6 @@ mod parser;
 pub use builder::{
     signer::{ExternalSigner, Wallet, WalletType},
     CreateCommitTransaction, CreateCommitTransactionArgs, OrdTransactionBuilder,
-    RevealTransactionArgs, TxInput,
+    RevealTransactionArgs, ScriptType, TxInput,
 };
 pub use parser::OrdParser;
