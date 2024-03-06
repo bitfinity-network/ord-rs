@@ -16,21 +16,17 @@ use bitcoin::{
     Address, Amount, Network, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
     Txid, Witness, XOnlyPublicKey,
 };
-use std::future::Future;
 
 const POSTAGE: u64 = 333;
 
 /// Ordinal-aware transaction builder for arbitrary (`Nft`)
 /// and `Brc20` inscriptions.
-pub struct OrdTransactionBuilder<F>
-where
-    F: Future<Output = Vec<u8>> + Send,
-{
+pub struct OrdTransactionBuilder {
     public_key: PublicKey,
     script_type: ScriptType,
     /// used to sign the reveal transaction when using P2TR
     taproot_payload: Option<TaprootPayload>,
-    signer: Wallet<F>,
+    signer: Wallet,
 }
 
 #[derive(Debug)]
@@ -87,11 +83,8 @@ enum RedeemScriptPubkey {
     XPublickey(XOnlyPublicKey),
 }
 
-impl<F> OrdTransactionBuilder<F>
-where
-    F: Future<Output = Vec<u8>> + Send,
-{
-    pub fn new(public_key: PublicKey, script_type: ScriptType, signer: Wallet<F>) -> Self {
+impl OrdTransactionBuilder {
+    pub fn new(public_key: PublicKey, script_type: ScriptType, signer: Wallet) -> Self {
         Self {
             public_key,
             script_type,
@@ -296,10 +289,7 @@ where
     /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2TR as script type (preferred).
     #[cfg(test)]
     #[allow(unused)]
-    pub(crate) fn p2tr(private_key: bitcoin::PrivateKey) -> Self
-    where
-        F: Future<Output = Vec<u8>> + Send,
-    {
+    pub(crate) fn p2tr(private_key: bitcoin::PrivateKey) -> Self {
         use super::builder::signer2::WalletType;
 
         let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
@@ -307,7 +297,7 @@ where
             secp256k1::Secp256k1::new(),
             None,
             None,
-            WalletType::LocalWallet { private_key },
+            WalletType::Local { private_key },
         );
         Self::new(public_key, ScriptType::P2TR, wallet)
     }
@@ -324,7 +314,7 @@ where
             secp256k1::Secp256k1::new(),
             None,
             None,
-            WalletType::LocalWallet { private_key },
+            WalletType::Local { private_key },
         );
         Self::new(public_key, ScriptType::P2WSH, wallet)
     }
@@ -346,7 +336,7 @@ pub struct TxInput {
 //     use hex_literal::hex;
 
 //     use super::*;
-//     use crate::inscription::brc20::Brc20;
+//     use crate::{inscription::brc20::Brc20, wallet::builder::signer2::WalletType};
 
 //     thread_local! {
 //         // The derivation path to use for ECDSA secp256k1.
@@ -356,12 +346,13 @@ pub struct TxInput {
 //         static KEY_NAME: RefCell<String> = RefCell::new(String::from(""));
 //     }
 
-//     fn mock_signer_function(
-//         key_name: String,
-//         derivation_path: Vec<Vec<u8>>,
-//         message: Vec<u8>,
+//     // Mock function to mimic signing behavior
+//     fn mock_signer_method(
+//         _key_name: String,
+//         _derivation_path: Vec<Vec<u8>>,
+//         _msg_hash: Vec<u8>,
 //     ) -> Pin<Box<dyn Future<Output = Vec<u8>>>> {
-//         Box::pin(async move { Vec::new() })
+//         Box::pin(async { Vec::new() })
 //     }
 
 //     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
@@ -377,9 +368,16 @@ pub struct TxInput {
 //         let public_key = private_key.public_key(&Secp256k1::new());
 //         let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
 
-//         let public_key = private_key.public_key(&Secp256k1::new());
+//         let wallet_type: WalletType<_> = WalletType::LocalWallet { private_key };
 
-//         let mut builder = OrdTransactionBuilder::p2wsh(private_key);
+//         let wallet: Wallet<_> = Wallet::new_with_signer(
+//             Secp256k1::new(),
+//             Some("key_name".to_string()),
+//             None,
+//             wallet_type,
+//         );
+
+//         let mut builder = OrdTransactionBuilder::new(public_key, ScriptType::P2WSH, wallet);
 
 //         let commit_transaction_args = CreateCommitTransactionArgs {
 //             utxos: vec![TxInput {

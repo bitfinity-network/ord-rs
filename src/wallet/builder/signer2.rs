@@ -13,39 +13,58 @@ use bitcoin::{
     taproot::ControlBlock,
     ScriptBuf, Transaction, Witness,
 };
-use std::future::Future;
-
-pub type SignerFn<F> = dyn Fn(String, Vec<Vec<u8>>, Vec<u8>) -> F + Send + Sync;
-
-/// Types of signers
-pub enum WalletType<F>
-where
-    F: Future<Output = Vec<u8>>,
-{
-    LocalWallet { private_key: PrivateKey },
-    ExternalWallet { signer: Box<SignerFn<F>> },
-}
 
 /// An abstraction over a transaction signer.
-pub struct Wallet<F>
+#[async_trait::async_trait]
+pub trait ExternalSigner {
+    async fn sign(
+        &self,
+        key_name: String,
+        derivation_path: Vec<Vec<u8>>,
+        message_hash: Vec<u8>,
+    ) -> Vec<u8>;
+}
+
+#[async_trait::async_trait]
+impl<F, Fut> ExternalSigner for F
 where
-    F: Future<Output = Vec<u8>> + Send,
+    F: Send + Sync + Fn(String, Vec<Vec<u8>>, Vec<u8>) -> Fut,
+    Fut: std::future::Future<Output = Vec<u8>> + Send,
 {
+    async fn sign(
+        &self,
+        key_name: String,
+        derivation_path: Vec<Vec<u8>>,
+        message_hash: Vec<u8>,
+    ) -> Vec<u8> {
+        self(key_name, derivation_path, message_hash).await
+    }
+}
+
+/// Types of signers.
+pub enum WalletType {
+    Local {
+        private_key: PrivateKey,
+    },
+    External {
+        signer: Box<dyn ExternalSigner + Send + Sync>,
+    },
+}
+
+/// An Ordinal-aware Bitcoin wallet.
+pub struct Wallet {
     secp: Secp256k1<All>,
     key_name: Option<String>,
     derivation_path: Option<Vec<Vec<u8>>>,
-    pub(crate) wallet_type: WalletType<F>,
+    pub(crate) wallet_type: WalletType,
 }
 
-impl<F> Wallet<F>
-where
-    F: Future<Output = Vec<u8>> + Send,
-{
+impl Wallet {
     pub fn new_with_signer(
         secp: Secp256k1<All>,
         key_name: Option<String>,
         derivation_path: Option<Vec<Vec<u8>>>,
-        wallet_type: WalletType<F>,
+        wallet_type: WalletType,
     ) -> Self {
         Self {
             secp,
@@ -159,15 +178,16 @@ where
             let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
 
             let signature = match &self.wallet_type {
-                WalletType::ExternalWallet { signer } => {
-                    (signer)(
-                        self.key_name.clone().unwrap(),
-                        self.derivation_path.clone().unwrap(),
-                        signature_hash.as_byte_array().to_vec(),
-                    )
-                    .await
+                WalletType::External { signer } => {
+                    signer
+                        .sign(
+                            self.key_name.clone().unwrap(),
+                            self.derivation_path.clone().unwrap(),
+                            signature_hash.as_byte_array().to_vec(),
+                        )
+                        .await
                 }
-                WalletType::LocalWallet { private_key } => {
+                WalletType::Local { private_key } => {
                     let sig = self.secp.sign_ecdsa(&message, &private_key.inner);
                     sig.serialize_der().to_vec()
                 }
