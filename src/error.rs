@@ -15,6 +15,8 @@ pub enum OrdError {
     InsufficientBalance,
     #[error("Invalid signature: {0}")]
     Signature(#[from] bitcoin::secp256k1::Error),
+    #[error("Failed to convert slice to public key: {0}")]
+    PubkeyConversion(#[from] bitcoin::key::Error),
     #[error("Invalid signature")]
     UnexpectedSignature,
     #[error("Taproot builder error: {0}")]
