@@ -20,15 +20,18 @@ extern crate log;
 extern crate serde;
 
 mod error;
-mod inscription;
+pub mod inscription;
 mod result;
 mod utils;
-
-pub mod brc20;
-pub mod transaction;
+pub mod wallet;
 
 pub use bitcoin;
 pub use error::{InscriptionParseError, OrdError};
+pub use inscription::brc20::Brc20;
+pub use inscription::nft::Nft;
 pub use inscription::Inscription;
 pub use result::OrdResult;
-pub use transaction::{OrdParser, OrdTransactionBuilder};
+pub use wallet::{
+    CreateCommitTransaction, CreateCommitTransactionArgs, ExternalSigner, OrdParser,
+    OrdTransactionBuilder, RevealTransactionArgs, TxInput, Wallet, WalletType,
+};

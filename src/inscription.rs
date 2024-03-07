@@ -1,9 +1,13 @@
+pub mod brc20;
+pub mod nft;
+
 use bitcoin::script::PushBytesBuf;
+use serde::de::DeserializeOwned;
 
 use crate::OrdResult;
 
 /// The inscription trait is used to write data to the redeem script of a commit and reveal transaction.
-pub trait Inscription {
+pub trait Inscription: DeserializeOwned {
     /// Returns the content type of the inscription.
     fn content_type(&self) -> String;
 

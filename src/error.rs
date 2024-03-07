@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// BRC-20 error
+/// Ordinal transaction handling error types
 #[derive(Error, Debug)]
 pub enum OrdError {
     #[error("Ord codec error: {0}")]
@@ -9,32 +9,49 @@ pub enum OrdError {
     BitcoinSigHash(#[from] bitcoin::sighash::Error),
     #[error("Bitcoin script error: {0}")]
     PushBytes(#[from] bitcoin::script::PushBytesError),
-    #[error("bad transaction input: {0}")]
+    #[error("Bad transaction input: {0}")]
     InputNotFound(usize),
-    #[error("insufficient balance")]
+    #[error("Insufficient balance")]
     InsufficientBalance,
-    #[error("invalid signature: {0}")]
+    #[error("Invalid signature: {0}")]
     Signature(#[from] bitcoin::secp256k1::Error),
-    #[error("invalid signature")]
+    #[error("Failed to convert slice to public key: {0}")]
+    PubkeyConversion(#[from] bitcoin::key::Error),
+    #[error("Invalid signature")]
     UnexpectedSignature,
-    #[error("taproot builder error: {0}")]
+    #[error("Taproot builder error: {0}")]
     TaprootBuilder(#[from] bitcoin::taproot::TaprootBuilderError),
-    #[error("taproot compute error")]
+    #[error("Taproot compute error")]
     TaprootCompute,
-    #[error("scripterror: {0}")]
+    #[error("Scripterror: {0}")]
     Script(#[from] bitcoin::blockdata::script::Error),
-    #[error("no transaction inputs")]
+    #[error("No transaction inputs")]
     NoInputs,
-    #[error("inscription parser error: {0}")]
+    #[error("Invalid UTF-8 in: {0}")]
+    Utf8Encoding(#[from] std::str::Utf8Error),
+    #[error("Inscription parser error: {0}")]
     InscriptionParser(#[from] InscriptionParseError),
 }
 
+/// Inscription parsing errors.
 #[derive(Error, Debug)]
 pub enum InscriptionParseError {
+    #[error("invalid transaction id: {0}")]
+    Txid(#[from] bitcoin::hashes::hex::HexToArrayError),
+    #[error("invalid character: {0}")]
+    Character(char),
+    #[error("invalid MIME type format")]
+    ContentType,
+    #[error("invalid length: {0}")]
+    InscriptionIdLength(usize),
     #[error("unexpected opcode token")]
     UnexpectedOpcode,
     #[error("unexpected push bytes token")]
     UnexpectedPushBytes,
     #[error("bad data syntax")]
     BadDataSyntax,
+    #[error("invalid separator: {0}")]
+    CharacterSeparator(char),
+    #[error("invalid index: {0}")]
+    Index(#[from] std::num::ParseIntError),
 }

@@ -133,7 +133,7 @@ impl OrdParser {
 mod test {
 
     use super::*;
-    use crate::brc20::Brc20;
+    use crate::inscription::brc20::Brc20;
     use crate::utils::test_utils::get_transaction_by_id;
 
     #[tokio::test]

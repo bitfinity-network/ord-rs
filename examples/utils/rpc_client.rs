@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use bitcoin::{Amount, Network, Transaction, Txid};
 use log::{debug, info};
-use ord_rs::transaction::TxInput;
+use ord_rs::wallet::TxInput;
 
 pub async fn broadcast_transaction(
     transaction: &Transaction,

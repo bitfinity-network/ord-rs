@@ -1,4 +1,19 @@
-# ord-rs Rust
+# ord-rs
+
+A library for working with Ordinal inscriptions.
+
+## Status
+
+### Done
+
+- [x] [inscription](src/inscription.rs): `Brc20` and `Nft` inscription types.
+- [x] [wallet](src/wallet.rs): Transaction builder, signer, and parser.
+
+### TODO
+
+- [ ] [indexer](src/indexer.rs): Scans the Bitcoin blockchain to catalog, organize, and provide information about Ordinal inscriptions.
+
+------------------------------------------------------------------------------------------------------------------------------
 
 [![build-test](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml/badge.svg)](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml)
 
@@ -101,6 +116,11 @@ let transaction = get_transaction_by_id(
 let inscription: Brc20 = OrdParser::parse(&transaction).unwrap().unwrap();
 assert_eq!(inscription, Brc20::transfer("mona", 100));
 ```
+
+## References
+
+- [Ordinal Theory](https://docs.ordinals.com/inscriptions.html)
+- [BRC-20 Standard](https://domo-2.gitbook.io/brc-20-experiment/)
 
 ## License
 

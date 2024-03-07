@@ -4,13 +4,16 @@ categories = ["cryptography::cryptocurrencies"]
 license = "MIT"
 version = "0.1.0"
 authors = ["Finity Technologies"]
-description = "A library for working with BRC-20 tokens."
+description = "A library for working with Ordinal inscriptions."
 repository = "https://github.com/bitfinity-network/ord-rs"
 documentation = "https://docs.rs/ord-rs"
 edition = "2021"
 
 [dependencies]
+async-trait = "0.1"
 bitcoin = { version = "0.31", features = ["rand"] }
+ciborium = "0.2"
+http = "1"
 log = "0.4"
 rand = { version = "0.8" }
 serde = { version = "1", features = ["derive"] }
@@ -26,7 +29,11 @@ env_logger = "0.11"
 hex = "0.4"
 hex-literal = "0.4"
 rand = { version = "0.8" }
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "trust-dns"] }
+reqwest = { version = "0.11", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "trust-dns",
+] }
 tokio = { version = "1", features = ["full"] }
 
 [[example]]

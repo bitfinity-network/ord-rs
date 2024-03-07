@@ -1,46 +1,94 @@
 name: build-test
 
 on:
-  pull_request:
   push:
     branches:
       - main
     paths-ignore:
       - "*.md"
+  pull_request:
+    types: [opened, reopened, synchronize]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-test:
-    name: Build and Test
+  check:
+    name: Check with ${{matrix.features}}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable]
+        os: [ubuntu]
+        features: [--all-features, --no-default-features]
+    steps:
+      - uses: actions/checkout@main
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{matrix.toolchain}}
+          override: true
+      - name: Check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --all-targets ${{matrix.features}}
+
+  test:
+    name: Test Rust ${{matrix.toolchain}} on ${{matrix.os}}
+    runs-on: ${{matrix.os}}-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, nightly]
+        os: [ubuntu]
+    steps:
+      - uses: actions/checkout@main
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{matrix.toolchain}}
+          override: true
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@main
+      - name: Install minimal nightly with clippy
+        uses: actions-rs/toolchain@v1
         with:
-          components: clippy, rustfmt
-          targets: i686-unknown-linux-gnu
+          profile: minimal
+          toolchain: nightly
+          components: clippy
+          override: true
+
+      - name: Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all -- -D clippy::all -D warnings
+
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+      - name: Install minimal nightly with rustfmt
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+          override: true
 
       - name: rustfmt
-        run: |
-          cargo fmt --all --check
-
-      - name: clippy
-        run: |
-          cargo clippy --all-features --all-targets -- -D warnings
-
-      - name: build
-        run: |
-          cargo build
-
-      - name: test
-        run: |
-          ./scripts/test.sh
-
-      - name: test i686-unknown-linux-gnu
-        run: |
-          sudo apt install gcc-multilib
-          ./scripts/test.sh --target i686-unknown-linux-gnu
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check

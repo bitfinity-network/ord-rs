@@ -4,9 +4,8 @@ use argh::FromArgs;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, PrivateKey};
 use log::{debug, info};
-use ord_rs::brc20::Brc20;
-use ord_rs::transaction::{CreateCommitTransactionArgs, RevealTransactionArgs};
-use ord_rs::OrdTransactionBuilder;
+use ord_rs::wallet::{CreateCommitTransactionArgs, RevealTransactionArgs};
+use ord_rs::{Brc20, OrdTransactionBuilder};
 use utils::rpc_client;
 
 use crate::utils::{calc_fees, Fees};
@@ -84,14 +83,19 @@ async fn main() -> anyhow::Result<()> {
         _ => panic!("invalid script type"),
     };
 
-    let commit_tx = builder.build_commit_transaction(CreateCommitTransactionArgs {
-        inputs,
-        inscription: Brc20::deploy(ticker, amount, Some(limit), None),
-        txin_script_pubkey: sender_address.script_pubkey(),
-        leftovers_recipient: sender_address.clone(),
-        commit_fee,
-        reveal_fee,
-    })?;
+    let commit_tx = builder
+        .build_commit_transaction(
+            network,
+            CreateCommitTransactionArgs {
+                inputs,
+                inscription: Brc20::deploy(ticker, amount, Some(limit), None),
+                txin_script_pubkey: sender_address.script_pubkey(),
+                leftovers_recipient: sender_address.clone(),
+                commit_fee,
+                reveal_fee,
+            },
+        )
+        .await?;
     debug!("commit transaction: {commit_tx:?}");
 
     let commit_txid = if args.dry_run {
@@ -103,15 +107,17 @@ async fn main() -> anyhow::Result<()> {
     info!("Commit transaction broadcasted: {}", commit_txid);
 
     debug!("getting reveal transaction...");
-    let reveal_transaction = builder.build_reveal_transaction(RevealTransactionArgs {
-        input: ord_rs::transaction::TxInput {
-            id: commit_txid,
-            index: 0,
-            amount: commit_tx.reveal_balance,
-        },
-        recipient_address: sender_address,
-        redeem_script: commit_tx.redeem_script,
-    })?;
+    let reveal_transaction = builder
+        .build_reveal_transaction(RevealTransactionArgs {
+            input: ord_rs::wallet::TxInput {
+                id: commit_txid,
+                index: 0,
+                amount: commit_tx.reveal_balance,
+            },
+            recipient_address: sender_address,
+            redeem_script: commit_tx.redeem_script,
+        })
+        .await?;
     debug!("reveal transaction: {reveal_transaction:?}");
 
     if !args.dry_run {
