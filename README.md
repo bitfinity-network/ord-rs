@@ -2,15 +2,16 @@
 
 A library for working with Ordinal inscriptions.
 
-## Modules
+## Status
 
-- [inscription](src/inscription.rs): `Brc20` and `Nft` inscription types.
-- [wallet](src/wallet.rs): Transaction builder, signer, and parser.
-- [indexer](src/indexer.rs): Scans the Bitcoin blockchain to catalog, organize, and provide information about Ordinal inscriptions.
+### Done
 
-## TODO
+- [x] [inscription](src/inscription.rs): `Brc20` and `Nft` inscription types.
+- [x] [wallet](src/wallet.rs): Transaction builder, signer, and parser.
 
-- [x] When more features are added, consider moving `inscription`, `wallet`, and `indexer` into separate member crates in a workspace.
+### TODO
+
+- [ ] [indexer](src/indexer.rs): Scans the Bitcoin blockchain to catalog, organize, and provide information about Ordinal inscriptions.
 
 ------------------------------------------------------------------------------------------------------------------------------
 
