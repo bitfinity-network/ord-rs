@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use bitcoin::{Amount, Network, Transaction, Txid};
 use log::{debug, info};
-use ord_rs::wallet::TxInput;
+use ord_rs::wallet::Utxo;
 
 pub async fn broadcast_transaction(
     transaction: &Transaction,
@@ -43,7 +43,7 @@ pub async fn broadcast_transaction(
 pub async fn sats_amount_from_tx_inputs(
     inputs: &[(Txid, u32)],
     network: Network,
-) -> anyhow::Result<Vec<TxInput>> {
+) -> anyhow::Result<Vec<Utxo>> {
     let mut output_inputs = Vec::with_capacity(inputs.len());
     for (txid, index) in inputs {
         let tx = get_tx_by_hash(txid, network).await?;
@@ -52,7 +52,7 @@ pub async fn sats_amount_from_tx_inputs(
             .get(*index as usize)
             .ok_or_else(|| anyhow::anyhow!("invalid index {} for txid {}", index, txid))?;
 
-        output_inputs.push(TxInput {
+        output_inputs.push(Utxo {
             id: *txid,
             index: *index,
             amount: Amount::from_sat(output.value),

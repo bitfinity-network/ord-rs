@@ -35,8 +35,8 @@ pub struct CreateCommitTransactionArgs<T>
 where
     T: Inscription,
 {
-    /// Inputs of the transaction
-    pub inputs: Vec<TxInput>,
+    /// UTXOs to be used as Inputs of the transaction
+    pub inputs: Vec<Utxo>,
     /// Inscription to write
     pub inscription: T,
     /// Address to send the leftovers BTC of the trasnsaction
@@ -62,7 +62,7 @@ pub struct CreateCommitTransaction {
 /// Arguments for creating a reveal transaction
 pub struct RevealTransactionArgs {
     /// Transaction input (output of commit transaction)
-    pub input: TxInput,
+    pub input: Utxo,
     /// Recipient address of the inscription, only support P2PKH
     pub recipient_address: Address,
     /// The redeem script returned by `create_commit_transaction`
@@ -306,8 +306,9 @@ impl OrdTransactionBuilder {
     }
 }
 
+/// Unspent transaction output to be used as input of a transaction
 #[derive(Debug, Clone)]
-pub struct TxInput {
+pub struct Utxo {
     pub id: Txid,
     pub index: u32,
     pub amount: Amount,
@@ -349,7 +350,7 @@ mod test {
         let mut builder = OrdTransactionBuilder::p2wsh(private_key);
 
         let commit_transaction_args = CreateCommitTransactionArgs {
-            inputs: vec![TxInput {
+            inputs: vec![Utxo {
                 id: Txid::from_str(
                     "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
                 )
@@ -410,7 +411,7 @@ mod test {
 
         let reveal_transaction = builder
             .build_reveal_transaction(RevealTransactionArgs {
-                input: TxInput {
+                input: Utxo {
                     id: tx_id,
                     index: 0,
                     amount: tx_result.reveal_balance,
@@ -453,7 +454,7 @@ mod test {
         let mut builder = OrdTransactionBuilder::p2tr(private_key);
 
         let commit_transaction_args = CreateCommitTransactionArgs {
-            inputs: vec![TxInput {
+            inputs: vec![Utxo {
                 id: Txid::from_str(
                     "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
                 )
@@ -505,7 +506,7 @@ mod test {
 
         let reveal_transaction = builder
             .build_reveal_transaction(RevealTransactionArgs {
-                input: TxInput {
+                input: Utxo {
                     id: tx_id,
                     index: 0,
                     amount: tx_result.reveal_balance,

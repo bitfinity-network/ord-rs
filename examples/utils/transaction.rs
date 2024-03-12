@@ -6,7 +6,7 @@ use bitcoin::transaction::Version;
 use bitcoin::{
     Address, Amount, OutPoint, PrivateKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
-use ord_rs::wallet::TxInput;
+use ord_rs::wallet::Utxo;
 use ord_rs::OrdError;
 
 #[allow(dead_code)]
@@ -14,7 +14,7 @@ pub fn spend_utxo_transaction(
     private_key: &PrivateKey,
     recipient: Address,
     utxo_value: Amount,
-    inputs: Vec<TxInput>,
+    inputs: Vec<Utxo>,
     fee: Amount,
 ) -> anyhow::Result<Transaction> {
     let secp = Secp256k1::new();
@@ -74,7 +74,7 @@ fn sign_transaction(
     unsigned_tx: Transaction,
     private_key: &PrivateKey,
     secp: &Secp256k1<secp256k1::All>,
-    inputs: Vec<TxInput>,
+    inputs: Vec<Utxo>,
     sender_script_pubkey: &ScriptBuf,
 ) -> anyhow::Result<Transaction> {
     let mut hash = SighashCache::new(unsigned_tx);
