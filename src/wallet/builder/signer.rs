@@ -8,7 +8,7 @@ use bitcoin::{
     PrivateKey, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, Transaction, Witness,
 };
 
-use super::super::builder::TxInput;
+use super::super::builder::Utxo;
 use super::taproot::TaprootPayload;
 use crate::{OrdError, OrdResult};
 
@@ -58,7 +58,7 @@ impl Wallet {
     pub async fn sign_commit_transaction(
         &mut self,
         own_pubkey: &PublicKey,
-        inputs: &[TxInput],
+        inputs: &[Utxo],
         transaction: Transaction,
         txin_script: &ScriptBuf,
     ) -> OrdResult<Transaction> {
@@ -75,7 +75,7 @@ impl Wallet {
     pub async fn sign_reveal_transaction_ecdsa(
         &mut self,
         own_pubkey: &PublicKey,
-        input: &TxInput,
+        input: &Utxo,
         transaction: Transaction,
         redeem_script: &bitcoin::ScriptBuf,
     ) -> OrdResult<Transaction> {
@@ -134,7 +134,7 @@ impl Wallet {
     async fn sign_ecdsa(
         &mut self,
         own_pubkey: &PublicKey,
-        utxos: &[TxInput],
+        utxos: &[Utxo],
         transaction: Transaction,
         script: &ScriptBuf,
         transaction_type: TransactionType,

@@ -33,5 +33,5 @@ pub use inscription::Inscription;
 pub use result::OrdResult;
 pub use wallet::{
     CreateCommitTransaction, CreateCommitTransactionArgs, ExternalSigner, OrdParser,
-    OrdTransactionBuilder, RevealTransactionArgs, TxInput, Wallet, WalletType,
+    OrdTransactionBuilder, RevealTransactionArgs, Utxo, Wallet, WalletType,
 };

@@ -104,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
     debug!("getting reveal transaction...");
     let reveal_transaction = builder
         .build_reveal_transaction(RevealTransactionArgs {
-            input: ord_rs::wallet::TxInput {
+            input: ord_rs::wallet::Utxo {
                 id: commit_txid,
                 index: 0,
                 amount: commit_tx.reveal_balance,
