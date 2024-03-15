@@ -52,11 +52,6 @@ impl Brc20 {
             amt,
         })
     }
-
-    /// Encode the BRC-20 operation as a JSON string
-    pub fn encode(&self) -> OrdResult<String> {
-        serde_json::to_string(self).map_err(OrdError::from)
-    }
 }
 
 impl FromStr for Brc20 {

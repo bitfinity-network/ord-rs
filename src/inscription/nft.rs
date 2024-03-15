@@ -67,7 +67,10 @@ pub struct Nft {
 
 impl Inscription for Nft {
     fn content_type(&self) -> String {
-        unimplemented!()
+        match self.content_type() {
+            Some(t) => t.to_string(),
+            None => "".to_string(),
+        }
     }
 
     fn data(&self) -> OrdResult<PushBytesBuf> {
@@ -163,11 +166,6 @@ impl Nft {
         }
 
         builder.push_opcode(opcodes::all::OP_ENDIF)
-    }
-
-    /// Encodes `Self` as a JSON string.
-    pub fn encode(&self) -> OrdResult<String> {
-        Ok(serde_json::to_string(self)?)
     }
 
     /// Creates a new `Nft` from JSON-encoded string.
