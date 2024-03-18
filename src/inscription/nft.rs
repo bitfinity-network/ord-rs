@@ -7,13 +7,15 @@ mod nft_tests;
 use std::io::Cursor;
 use std::str::FromStr;
 
-use bitcoin::opcodes;
+use bitcoin::opcodes::all::OP_CHECKSIG;
+use bitcoin::opcodes::{self};
 use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf, ScriptBuf};
 use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use crate::utils::{self, bytes_to_push_bytes, constants};
+use crate::wallet::RedeemScriptPubkey;
 use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
 
 /// Represents an arbitrary Ordinal inscription. We're "unofficially" referring to this as an NFT
@@ -66,6 +68,23 @@ pub struct Nft {
 }
 
 impl Inscription for Nft {
+    fn generate_redeem_script(
+        &self,
+        builder: ScriptBuilder,
+        pubkey: RedeemScriptPubkey,
+    ) -> OrdResult<ScriptBuilder> {
+        let encoded_pubkey = match pubkey {
+            RedeemScriptPubkey::Ecdsa(pubkey) => bytes_to_push_bytes(&pubkey.to_bytes())?,
+            RedeemScriptPubkey::XPublickey(pubkey) => bytes_to_push_bytes(&pubkey.serialize())?,
+        };
+
+        let builder = builder
+            .push_slice(encoded_pubkey.as_push_bytes())
+            .push_opcode(OP_CHECKSIG);
+
+        self.append_reveal_script_to_builder(builder)
+    }
+
     fn content_type(&self) -> String {
         match self.content_type() {
             Some(t) => t.to_string(),
@@ -115,7 +134,10 @@ impl Nft {
         Ok(self.clone())
     }
 
-    pub fn append_reveal_script_to_builder(&self, mut builder: ScriptBuilder) -> ScriptBuilder {
+    fn append_reveal_script_to_builder(
+        &self,
+        mut builder: ScriptBuilder,
+    ) -> OrdResult<ScriptBuilder> {
         builder = builder
             .push_opcode(opcodes::OP_FALSE)
             .push_opcode(opcodes::all::OP_IF)
@@ -124,48 +146,48 @@ impl Nft {
         if let Some(content_type) = self.content_type.clone() {
             builder = builder
                 .push_slice(constants::CONTENT_TYPE_TAG)
-                .push_slice(PushBytesBuf::try_from(content_type).unwrap());
+                .push_slice(PushBytesBuf::try_from(content_type)?);
         }
 
         if let Some(content_encoding) = self.content_encoding.clone() {
             builder = builder
                 .push_slice(constants::CONTENT_ENCODING_TAG)
-                .push_slice(PushBytesBuf::try_from(content_encoding).unwrap());
+                .push_slice(PushBytesBuf::try_from(content_encoding)?);
         }
 
         if let Some(protocol) = self.metaprotocol.clone() {
             builder = builder
                 .push_slice(constants::METAPROTOCOL_TAG)
-                .push_slice(PushBytesBuf::try_from(protocol).unwrap());
+                .push_slice(PushBytesBuf::try_from(protocol)?);
         }
 
         if let Some(parent) = self.parent.clone() {
             builder = builder
                 .push_slice(constants::PARENT_TAG)
-                .push_slice(PushBytesBuf::try_from(parent).unwrap());
+                .push_slice(PushBytesBuf::try_from(parent)?);
         }
 
         if let Some(pointer) = self.pointer.clone() {
             builder = builder
                 .push_slice(constants::POINTER_TAG)
-                .push_slice(PushBytesBuf::try_from(pointer).unwrap());
+                .push_slice(PushBytesBuf::try_from(pointer)?);
         }
 
         if let Some(metadata) = &self.metadata {
             for chunk in metadata.chunks(520) {
                 builder = builder.push_slice(constants::METADATA_TAG);
-                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
+                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec())?);
             }
         }
 
         if let Some(body) = &self.body {
             builder = builder.push_slice(constants::BODY_TAG);
             for chunk in body.chunks(520) {
-                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
+                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec())?);
             }
         }
 
-        builder.push_opcode(opcodes::all::OP_ENDIF)
+        Ok(builder.push_opcode(opcodes::all::OP_ENDIF))
     }
 
     /// Creates a new `Nft` from JSON-encoded string.
@@ -219,8 +241,8 @@ impl Nft {
         bytes
     }
 
-    pub fn reveal_script_as_scriptbuf(&self, builder: ScriptBuilder) -> ScriptBuf {
-        self.append_reveal_script_to_builder(builder).into_script()
+    pub fn reveal_script_as_scriptbuf(&self, builder: ScriptBuilder) -> OrdResult<ScriptBuf> {
+        Ok(self.append_reveal_script_to_builder(builder)?.into_script())
     }
 }
 
@@ -279,6 +301,7 @@ mod tests {
         assert_eq!(
             create_nft("btc", [])
                 .reveal_script_as_scriptbuf(ScriptBuilder::new())
+                .unwrap()
                 .instructions()
                 .count(),
             7
@@ -287,6 +310,7 @@ mod tests {
         assert_eq!(
             create_nft("btc", [0; 1])
                 .reveal_script_as_scriptbuf(ScriptBuilder::new())
+                .unwrap()
                 .instructions()
                 .count(),
             8
@@ -295,6 +319,7 @@ mod tests {
         assert_eq!(
             create_nft("btc", [0; 520])
                 .reveal_script_as_scriptbuf(ScriptBuilder::new())
+                .unwrap()
                 .instructions()
                 .count(),
             8
@@ -303,6 +328,7 @@ mod tests {
         assert_eq!(
             create_nft("btc", [0; 521])
                 .reveal_script_as_scriptbuf(ScriptBuilder::new())
+                .unwrap()
                 .instructions()
                 .count(),
             9
@@ -311,6 +337,7 @@ mod tests {
         assert_eq!(
             create_nft("btc", [0; 1040])
                 .reveal_script_as_scriptbuf(ScriptBuilder::new())
+                .unwrap()
                 .instructions()
                 .count(),
             9
@@ -319,6 +346,7 @@ mod tests {
         assert_eq!(
             create_nft("btc", [0; 1041])
                 .reveal_script_as_scriptbuf(ScriptBuilder::new())
+                .unwrap()
                 .instructions()
                 .count(),
             10
@@ -333,6 +361,7 @@ mod tests {
                 ..Default::default()
             }
             .reveal_script_as_scriptbuf(ScriptBuilder::new())
+            .unwrap()
             .instructions()
             .count(),
             4
@@ -344,6 +373,7 @@ mod tests {
                 ..Default::default()
             }
             .reveal_script_as_scriptbuf(ScriptBuilder::new())
+            .unwrap()
             .instructions()
             .count(),
             4
@@ -355,6 +385,7 @@ mod tests {
                 ..Default::default()
             }
             .reveal_script_as_scriptbuf(ScriptBuilder::new())
+            .unwrap()
             .instructions()
             .count(),
             6
@@ -366,6 +397,7 @@ mod tests {
                 ..Default::default()
             }
             .reveal_script_as_scriptbuf(ScriptBuilder::new())
+            .unwrap()
             .instructions()
             .count(),
             6
@@ -377,6 +409,7 @@ mod tests {
                 ..Default::default()
             }
             .reveal_script_as_scriptbuf(ScriptBuilder::new())
+            .unwrap()
             .instructions()
             .count(),
             8

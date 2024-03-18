@@ -1,9 +1,12 @@
 use std::str::FromStr;
 
-use bitcoin::script::PushBytesBuf;
+use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
+use bitcoin::opcodes::{OP_0, OP_FALSE};
+use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use serde_with::{serde_as, DisplayFromStr};
 
 use crate::utils::bytes_to_push_bytes;
+use crate::wallet::RedeemScriptPubkey;
 use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
 
 const PROTOCOL: &str = "brc-20";
@@ -52,6 +55,29 @@ impl Brc20 {
             amt,
         })
     }
+
+    fn append_reveal_script_to_builder(
+        &self,
+        builder: ScriptBuilder,
+        pubkey: RedeemScriptPubkey,
+    ) -> OrdResult<ScriptBuilder> {
+        let encoded_pubkey = match pubkey {
+            RedeemScriptPubkey::Ecdsa(pubkey) => bytes_to_push_bytes(&pubkey.to_bytes())?,
+            RedeemScriptPubkey::XPublickey(pubkey) => bytes_to_push_bytes(&pubkey.serialize())?,
+        };
+
+        Ok(builder
+            .push_slice(encoded_pubkey.as_push_bytes())
+            .push_opcode(OP_CHECKSIG)
+            .push_opcode(OP_FALSE)
+            .push_opcode(OP_IF)
+            .push_slice(b"ord")
+            .push_slice(b"\x01")
+            .push_slice(bytes_to_push_bytes(self.content_type().as_bytes())?.as_push_bytes())
+            .push_opcode(OP_0)
+            .push_slice(self.data()?.as_push_bytes())
+            .push_opcode(OP_ENDIF))
+    }
 }
 
 impl FromStr for Brc20 {
@@ -63,6 +89,14 @@ impl FromStr for Brc20 {
 }
 
 impl Inscription for Brc20 {
+    fn generate_redeem_script(
+        &self,
+        builder: ScriptBuilder,
+        pubkey: RedeemScriptPubkey,
+    ) -> OrdResult<ScriptBuilder> {
+        self.append_reveal_script_to_builder(builder, pubkey)
+    }
+
     fn content_type(&self) -> String {
         "text/plain;charset=utf-8".to_string()
     }
