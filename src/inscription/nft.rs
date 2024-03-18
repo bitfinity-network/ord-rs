@@ -146,44 +146,44 @@ impl Nft {
         if let Some(content_type) = self.content_type.clone() {
             builder = builder
                 .push_slice(constants::CONTENT_TYPE_TAG)
-                .push_slice(PushBytesBuf::try_from(content_type).unwrap());
+                .push_slice(PushBytesBuf::try_from(content_type)?);
         }
 
         if let Some(content_encoding) = self.content_encoding.clone() {
             builder = builder
                 .push_slice(constants::CONTENT_ENCODING_TAG)
-                .push_slice(PushBytesBuf::try_from(content_encoding).unwrap());
+                .push_slice(PushBytesBuf::try_from(content_encoding)?);
         }
 
         if let Some(protocol) = self.metaprotocol.clone() {
             builder = builder
                 .push_slice(constants::METAPROTOCOL_TAG)
-                .push_slice(PushBytesBuf::try_from(protocol).unwrap());
+                .push_slice(PushBytesBuf::try_from(protocol)?);
         }
 
         if let Some(parent) = self.parent.clone() {
             builder = builder
                 .push_slice(constants::PARENT_TAG)
-                .push_slice(PushBytesBuf::try_from(parent).unwrap());
+                .push_slice(PushBytesBuf::try_from(parent)?);
         }
 
         if let Some(pointer) = self.pointer.clone() {
             builder = builder
                 .push_slice(constants::POINTER_TAG)
-                .push_slice(PushBytesBuf::try_from(pointer).unwrap());
+                .push_slice(PushBytesBuf::try_from(pointer)?);
         }
 
         if let Some(metadata) = &self.metadata {
             for chunk in metadata.chunks(520) {
                 builder = builder.push_slice(constants::METADATA_TAG);
-                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
+                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec())?);
             }
         }
 
         if let Some(body) = &self.body {
             builder = builder.push_slice(constants::BODY_TAG);
             for chunk in body.chunks(520) {
-                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
+                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec())?);
             }
         }
 
