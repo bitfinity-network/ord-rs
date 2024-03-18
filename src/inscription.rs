@@ -1,10 +1,11 @@
 pub mod brc20;
 pub mod nft;
 
-use bitcoin::script::PushBytesBuf;
+use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use crate::wallet::RedeemScriptPubkey;
 use crate::{OrdError, OrdResult};
 
 /// The `Inscription` trait defines the behavior necessary for handling
@@ -13,6 +14,12 @@ use crate::{OrdError, OrdResult};
 /// These are methods for encoding, decoding, and managing
 /// the inscriptions, tailored to specific types (e.g. `Brc20`, `Nft`).
 pub trait Inscription: DeserializeOwned {
+    fn generate_redeem_script(
+        &self,
+        builder: ScriptBuilder,
+        pubkey: RedeemScriptPubkey,
+    ) -> OrdResult<ScriptBuilder>;
+
     /// Encodes the inscription object into a JSON string.
     ///
     /// # Errors

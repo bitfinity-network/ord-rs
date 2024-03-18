@@ -2,8 +2,6 @@ pub mod signer;
 mod taproot;
 
 use bitcoin::absolute::LockTime;
-use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
-use bitcoin::opcodes::{OP_0, OP_FALSE};
 use bitcoin::script::Builder as ScriptBuilder;
 use bitcoin::transaction::Version;
 use bitcoin::{
@@ -14,7 +12,6 @@ use signer::Wallet;
 
 use super::builder::taproot::{generate_keypair, TaprootPayload};
 use crate::inscription::Inscription;
-use crate::utils::bytes_to_push_bytes;
 use crate::{OrdError, OrdResult};
 
 const POSTAGE: u64 = 333;
@@ -78,7 +75,7 @@ pub enum ScriptType {
 }
 
 #[derive(Debug)]
-enum RedeemScriptPubkey {
+pub enum RedeemScriptPubkey {
     Ecdsa(PublicKey),
     XPublickey(XOnlyPublicKey),
 }
@@ -258,7 +255,7 @@ impl OrdTransactionBuilder {
         Ok(tx)
     }
 
-    /// Generate redeem script from private key and inscription
+    /// Generate redeem script from script pubkey and inscription
     fn generate_redeem_script<T>(
         &self,
         inscription: &T,
@@ -267,22 +264,8 @@ impl OrdTransactionBuilder {
     where
         T: Inscription,
     {
-        let encoded_pubkey = match pubkey {
-            RedeemScriptPubkey::Ecdsa(pubkey) => bytes_to_push_bytes(&pubkey.to_bytes())?,
-            RedeemScriptPubkey::XPublickey(pubkey) => bytes_to_push_bytes(&pubkey.serialize())?,
-        };
-
-        Ok(ScriptBuilder::new()
-            .push_slice(encoded_pubkey.as_push_bytes())
-            .push_opcode(OP_CHECKSIG)
-            .push_opcode(OP_FALSE)
-            .push_opcode(OP_IF)
-            .push_slice(b"ord")
-            .push_slice(b"\x01")
-            .push_slice(bytes_to_push_bytes(inscription.content_type().as_bytes())?.as_push_bytes())
-            .push_opcode(OP_0)
-            .push_slice(inscription.data()?.as_push_bytes())
-            .push_opcode(OP_ENDIF)
+        Ok(inscription
+            .generate_redeem_script(ScriptBuilder::new(), pubkey)?
             .into_script())
     }
 
