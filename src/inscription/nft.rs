@@ -134,7 +134,7 @@ impl Nft {
         Ok(self.clone())
     }
 
-    fn append_reveal_script_to_builder(
+    pub fn append_reveal_script_to_builder(
         &self,
         mut builder: ScriptBuilder,
     ) -> OrdResult<ScriptBuilder> {
