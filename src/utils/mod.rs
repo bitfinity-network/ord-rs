@@ -1,4 +1,3 @@
-pub mod constants;
 mod push_bytes;
 #[cfg(test)]
 pub mod test_utils;

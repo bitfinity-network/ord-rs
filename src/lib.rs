@@ -35,3 +35,5 @@ pub use wallet::{
     CreateCommitTransaction, CreateCommitTransactionArgs, ExternalSigner, OrdParser,
     OrdTransactionBuilder, RevealTransactionArgs, Utxo, Wallet, WalletType,
 };
+
+pub mod constants;

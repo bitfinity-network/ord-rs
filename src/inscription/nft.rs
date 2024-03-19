@@ -14,9 +14,9 @@ use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::utils::{self, bytes_to_push_bytes, constants};
+use crate::utils::{self, bytes_to_push_bytes};
 use crate::wallet::RedeemScriptPubkey;
-use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
+use crate::{constants, Inscription, InscriptionParseError, OrdError, OrdResult};
 
 /// Represents an arbitrary Ordinal inscription. We're "unofficially" referring to this as an NFT
 /// (e.g., like an ERC721 token). Ordinal inscriptions allow for the embedding of data directly
