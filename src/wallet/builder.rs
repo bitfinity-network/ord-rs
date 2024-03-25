@@ -457,7 +457,6 @@ pub struct Utxo {
 
 #[cfg(test)]
 mod test {
-    use std::cell::RefCell;
     use std::str::FromStr;
 
     use bitcoin::secp256k1::Secp256k1;
@@ -466,14 +465,6 @@ mod test {
 
     use super::*;
     use crate::Brc20;
-
-    thread_local! {
-        // The derivation path to use for ECDSA secp256k1.
-        static DERIVATION_PATH: Vec<Vec<u8>> = vec![];
-
-        // The ECDSA key name.
-        static KEY_NAME: RefCell<String> = RefCell::new(String::from(""));
-    }
 
     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
