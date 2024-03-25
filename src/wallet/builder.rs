@@ -5,16 +5,16 @@ use bitcoin::absolute::LockTime;
 use bitcoin::script::Builder as ScriptBuilder;
 use bitcoin::transaction::Version;
 use bitcoin::{
-    secp256k1, Address, Amount, Network, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction,
-    TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
+    secp256k1, Address, Amount, FeeRate, Network, OutPoint, PublicKey, ScriptBuf, Sequence,
+    Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
 use signer::Wallet;
 
 use super::builder::taproot::{generate_keypair, TaprootPayload};
 use crate::inscription::Inscription;
+use crate::utils::constants::POSTAGE;
+use crate::utils::fees::{estimate_commit_fee, estimate_reveal_fee, MultisigConfig};
 use crate::{OrdError, OrdResult};
-
-const POSTAGE: u64 = 333;
 
 /// Ordinal-aware transaction builder for arbitrary (`Nft`)
 /// and `Brc20` inscriptions.
@@ -32,7 +32,7 @@ pub struct CreateCommitTransactionArgs<T>
 where
     T: Inscription,
 {
-    /// UTXOs to be used as Inputs of the transaction
+    /// UTXOs to be used as inputs of the transaction
     pub inputs: Vec<Utxo>,
     /// Inscription to write
     pub inscription: T,
@@ -44,6 +44,26 @@ where
     pub reveal_fee: Amount,
     /// Script pubkey of the inputs
     pub txin_script_pubkey: ScriptBuf,
+}
+
+#[derive(Debug)]
+/// Arguments for creating a commit transaction
+pub struct CreateCommitTransactionArgsV2<T>
+where
+    T: Inscription,
+{
+    /// UTXOs to be used as inputs of the transaction
+    pub inputs: Vec<Utxo>,
+    /// Inscription to write
+    pub inscription: T,
+    /// Address to send the leftovers BTC of the trasnsaction
+    pub leftovers_recipient: Address,
+    /// Script pubkey of the inputs
+    pub txin_script_pubkey: ScriptBuf,
+    /// Current fee rate on the network
+    pub fee_rate: FeeRate,
+    /// Multisig configuration, if applicable
+    pub multisig_config: Option<MultisigConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +108,144 @@ impl OrdTransactionBuilder {
             taproot_payload: None,
             signer,
         }
+    }
+
+    /// Creates the commit transaction.
+    pub async fn build_commit_transaction_v2<T>(
+        &mut self,
+        network: Network,
+        recipient_address: Address,
+        args: CreateCommitTransactionArgsV2<T>,
+    ) -> OrdResult<CreateCommitTransaction>
+    where
+        T: Inscription,
+    {
+        let secp_ctx = secp256k1::Secp256k1::new();
+
+        // generate P2TR keyts
+        let p2tr_keys = match self.script_type {
+            ScriptType::P2WSH => None,
+            ScriptType::P2TR => Some(generate_keypair(&secp_ctx)),
+        };
+
+        // generate redeem script pubkey based on the current script type
+        let redeem_script_pubkey = match self.script_type {
+            ScriptType::P2WSH => RedeemScriptPubkey::Ecdsa(self.public_key),
+            ScriptType::P2TR => RedeemScriptPubkey::XPublickey(p2tr_keys.unwrap().1),
+        };
+
+        let redeem_script = self.generate_redeem_script(&args.inscription, redeem_script_pubkey)?;
+        debug!("redeem_script: {redeem_script}");
+
+        let reveal_fee = estimate_reveal_fee(
+            vec![OutPoint::null()],
+            recipient_address,
+            redeem_script.clone(),
+            self.script_type,
+            args.fee_rate,
+            &args.multisig_config,
+        );
+
+        let reveal_balance = POSTAGE + reveal_fee.to_sat();
+        debug!("reveal_balance: {reveal_balance}");
+
+        let script_output_address = match self.script_type {
+            ScriptType::P2WSH => Address::p2wsh(&redeem_script, network),
+            ScriptType::P2TR => {
+                let taproot_payload = TaprootPayload::build(
+                    &secp_ctx,
+                    p2tr_keys.unwrap().0,
+                    p2tr_keys.unwrap().1,
+                    &redeem_script,
+                    reveal_balance,
+                    network,
+                )?;
+
+                let address = taproot_payload.address.clone();
+                self.taproot_payload = Some(taproot_payload);
+                address
+            }
+        };
+        debug!("script_output_address: {script_output_address}");
+
+        let mut leftover_amount = 0;
+
+        let mut tx_out = vec![
+            TxOut {
+                value: Amount::from_sat(reveal_balance),
+                script_pubkey: script_output_address.script_pubkey(),
+            },
+            TxOut {
+                value: Amount::from_sat(leftover_amount),
+                script_pubkey: args.txin_script_pubkey.clone(),
+            },
+        ];
+
+        let tx_in: Vec<TxIn> = args
+            .inputs
+            .iter()
+            .map(|input| TxIn {
+                previous_output: OutPoint {
+                    txid: input.id,
+                    vout: input.index,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::from_consensus(0xffffffff),
+                witness: Witness::new(),
+            })
+            .collect();
+
+        let commit_fee = estimate_commit_fee(
+            Transaction {
+                version: Version::TWO,
+                lock_time: LockTime::ZERO,
+                input: tx_in.clone(),
+                output: tx_out.clone(),
+            },
+            self.script_type,
+            args.fee_rate,
+            &args.multisig_config,
+        );
+
+        // calc balance
+        // exceeding amount of transaction to send to leftovers recipient
+        leftover_amount = args
+            .inputs
+            .iter()
+            .map(|input| input.amount.to_sat())
+            .sum::<u64>()
+            .checked_sub(POSTAGE)
+            .and_then(|v| v.checked_sub(commit_fee.to_sat()))
+            .and_then(|v| v.checked_sub(reveal_fee.to_sat()))
+            .ok_or(OrdError::InsufficientBalance)?;
+        debug!("leftover_amount: {leftover_amount}");
+
+        tx_out[1].value = Amount::from_sat(leftover_amount);
+
+        // make transaction and sign it
+        let unsigned_tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: tx_in,
+            output: tx_out,
+        };
+
+        // sign transaction and update witness
+        let tx = self
+            .signer
+            .sign_commit_transaction(
+                &self.public_key,
+                &args.inputs,
+                unsigned_tx,
+                &args.txin_script_pubkey,
+            )
+            .await?;
+
+        Ok(CreateCommitTransaction {
+            tx,
+            redeem_script,
+            reveal_balance: Amount::from_sat(reveal_balance),
+        })
     }
 
     /// Creates the commit transaction.
