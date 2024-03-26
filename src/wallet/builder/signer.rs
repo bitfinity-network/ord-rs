@@ -15,12 +15,19 @@ use crate::{OrdError, OrdResult};
 /// An abstraction over a transaction signer.
 #[async_trait::async_trait]
 pub trait ExternalSigner {
-    async fn sign(
+    /// Retrieves the ECDSA public key at the given derivation path.
+    async fn ecdsa_public_key(&self) -> Vec<u8>;
+
+    /// Signs a message with an ECDSA key and returns the signature.
+    async fn sign_with_ecdsa(&self, message: String) -> Vec<u8>;
+
+    /// Verifies an ECDSA signature against a message and a public key.
+    async fn verify_ecdsa(
         &self,
-        key_name: String,
-        derivation_path: Vec<Vec<u8>>,
-        message_hash: Vec<u8>,
-    ) -> Vec<u8>;
+        signature_hex: String,
+        message: String,
+        public_key_hex: String,
+    ) -> bool;
 }
 
 /// Types of signers.
@@ -35,23 +42,15 @@ pub enum WalletType {
 
 /// An Ordinal-aware Bitcoin wallet.
 pub struct Wallet {
+    pub signer: WalletType,
     secp: Secp256k1<All>,
-    pub key_name: Option<String>,
-    pub derivation_path: Option<Vec<Vec<u8>>>,
-    pub wallet_type: WalletType,
 }
 
 impl Wallet {
-    pub fn new_with_signer(
-        key_name: Option<String>,
-        derivation_path: Option<Vec<Vec<u8>>>,
-        wallet_type: WalletType,
-    ) -> Self {
+    pub fn new_with_signer(signer: WalletType) -> Self {
         Self {
+            signer,
             secp: Secp256k1::new(),
-            key_name,
-            derivation_path,
-            wallet_type,
         }
     }
 
@@ -158,15 +157,9 @@ impl Wallet {
 
             let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
 
-            let signature = match &self.wallet_type {
+            let signature = match &self.signer {
                 WalletType::External { signer } => {
-                    signer
-                        .sign(
-                            self.key_name.clone().unwrap(),
-                            self.derivation_path.clone().unwrap(),
-                            signature_hash.as_byte_array().to_vec(),
-                        )
-                        .await
+                    signer.sign_with_ecdsa(signature_hash.to_string()).await
                 }
                 WalletType::Local { private_key } => {
                     let sig = self.secp.sign_ecdsa(&message, &private_key.inner);
@@ -179,9 +172,23 @@ impl Wallet {
             // verify signature
             debug!("verifying signature");
 
-            self.secp
-                .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
+            match &self.signer {
+                WalletType::External { signer } => {
+                    signer
+                        .verify_ecdsa(
+                            signature.to_string(),
+                            message.to_string(),
+                            own_pubkey.to_string(),
+                        )
+                        .await;
+                }
+                WalletType::Local { private_key: _ } => {
+                    self.secp
+                        .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
+                }
+            }
             debug!("signature verified");
+
             // append witness
             let signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
             match transaction_type {

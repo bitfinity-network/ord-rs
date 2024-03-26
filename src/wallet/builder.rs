@@ -432,7 +432,7 @@ impl OrdTransactionBuilder {
         use signer::WalletType;
 
         let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
-        let wallet = Wallet::new_with_signer(None, None, WalletType::Local { private_key });
+        let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
         Self::new(public_key, ScriptType::P2TR, wallet)
     }
 
@@ -442,7 +442,7 @@ impl OrdTransactionBuilder {
         use signer::WalletType;
 
         let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
-        let wallet = Wallet::new_with_signer(None, None, WalletType::Local { private_key });
+        let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
         Self::new(public_key, ScriptType::P2WSH, wallet)
     }
 }
