@@ -16,7 +16,7 @@ use crate::{OrdError, OrdResult};
 #[async_trait::async_trait]
 pub trait ExternalSigner {
     /// Retrieves the ECDSA public key at the given derivation path.
-    async fn ecdsa_public_key(&self) -> Vec<u8>;
+    async fn ecdsa_public_key(&self) -> String;
 
     /// Signs a message with an ECDSA key and returns the signature.
     async fn sign_with_ecdsa(&self, message: String) -> Vec<u8>;
@@ -174,12 +174,9 @@ impl Wallet {
 
             match &self.signer {
                 WalletType::External { signer } => {
+                    let ecdsa_public_key = signer.ecdsa_public_key().await;
                     signer
-                        .verify_ecdsa(
-                            signature.to_string(),
-                            message.to_string(),
-                            own_pubkey.to_string(),
-                        )
+                        .verify_ecdsa(signature.to_string(), message.to_string(), ecdsa_public_key)
                         .await;
                 }
                 WalletType::Local { private_key: _ } => {
