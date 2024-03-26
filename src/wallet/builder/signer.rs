@@ -19,7 +19,7 @@ pub trait ExternalSigner {
     async fn ecdsa_public_key(&self) -> String;
 
     /// Signs a message with an ECDSA key and returns the signature.
-    async fn sign_with_ecdsa(&self, message: String) -> Vec<u8>;
+    async fn sign_with_ecdsa(&self, message: String) -> String;
 
     /// Verifies an ECDSA signature against a message and a public key.
     async fn verify_ecdsa(
@@ -157,9 +157,10 @@ impl Wallet {
 
             let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
 
-            let signature = match &self.signer {
+            let sig_bytes = match &self.signer {
                 WalletType::External { signer } => {
-                    signer.sign_with_ecdsa(signature_hash.to_string()).await
+                    let sig = signer.sign_with_ecdsa(message.to_string()).await;
+                    hex::decode(sig)?
                 }
                 WalletType::Local { private_key } => {
                     let sig = self.secp.sign_ecdsa(&message, &private_key.inner);
@@ -167,7 +168,7 @@ impl Wallet {
                 }
             };
 
-            let signature = Signature::from_der(&signature)?;
+            let signature = Signature::from_der(&sig_bytes)?;
             debug!("signature: {}", signature.serialize_der());
             // verify signature
             debug!("verifying signature");
@@ -176,7 +177,11 @@ impl Wallet {
                 WalletType::External { signer } => {
                     let ecdsa_public_key = signer.ecdsa_public_key().await;
                     signer
-                        .verify_ecdsa(signature.to_string(), message.to_string(), ecdsa_public_key)
+                        .verify_ecdsa(
+                            hex::encode(sig_bytes),
+                            message.to_string(),
+                            ecdsa_public_key,
+                        )
                         .await;
                 }
                 WalletType::Local { private_key: _ } => {

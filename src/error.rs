@@ -3,6 +3,8 @@ use thiserror::Error;
 /// Ordinal transaction handling error types
 #[derive(Error, Debug)]
 pub enum OrdError {
+    #[error("Hex codec error: {0}")]
+    HexCodec(#[from] hex::FromHexError),
     #[error("Ord codec error: {0}")]
     Codec(#[from] serde_json::Error),
     #[error("Bitcoin sighash error: {0}")]
