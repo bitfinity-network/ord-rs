@@ -1,3 +1,5 @@
+use core::str::FromStr;
+
 use bitcoin::hashes::Hash as _;
 use bitcoin::key::Secp256k1;
 use bitcoin::secp256k1::ecdsa::Signature;
@@ -140,7 +142,7 @@ impl Wallet {
     ) -> OrdResult<Transaction> {
         let mut hash = SighashCache::new(transaction.clone());
         for (index, input) in utxos.iter().enumerate() {
-            let signature_hash = match transaction_type {
+            let sighash = match transaction_type {
                 TransactionType::Commit => hash.p2wpkh_signature_hash(
                     index,
                     script,
@@ -155,34 +157,25 @@ impl Wallet {
                 )?,
             };
 
-            let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
+            let message = secp256k1::Message::from_digest(sighash.to_byte_array());
 
-            let sig_bytes = match &self.signer {
+            let signature = match &self.signer {
                 WalletType::External { signer } => {
-                    let sig = signer.sign_with_ecdsa(message.to_string()).await;
-                    hex::decode(sig)?
+                    let sig = signer.sign_with_ecdsa(hex::encode(sighash)).await;
+                    Signature::from_str(&sig)?
                 }
                 WalletType::Local { private_key } => {
-                    let sig = self.secp.sign_ecdsa(&message, &private_key.inner);
-                    sig.serialize_der().to_vec()
+                    self.secp.sign_ecdsa(&message, &private_key.inner)
                 }
             };
 
-            let signature = Signature::from_der(&sig_bytes)?;
             debug!("signature: {}", signature.serialize_der());
             // verify signature
             debug!("verifying signature");
 
             match &self.signer {
-                WalletType::External { signer } => {
-                    let ecdsa_public_key = signer.ecdsa_public_key().await;
-                    signer
-                        .verify_ecdsa(
-                            hex::encode(sig_bytes),
-                            message.to_string(),
-                            ecdsa_public_key,
-                        )
-                        .await;
+                WalletType::External { signer: _ } => {
+                    continue;
                 }
                 WalletType::Local { private_key: _ } => {
                     self.secp
