@@ -1,5 +1,3 @@
-use core::str::FromStr;
-
 use bitcoin::hashes::Hash as _;
 use bitcoin::key::Secp256k1;
 use bitcoin::secp256k1::ecdsa::Signature;
@@ -21,15 +19,10 @@ pub trait ExternalSigner {
     async fn ecdsa_public_key(&self) -> String;
 
     /// Signs a message with an ECDSA key and returns the signature.
-    async fn sign_with_ecdsa(&self, message: String) -> String;
+    async fn sign_with_ecdsa(&self, message: &str) -> String;
 
     /// Verifies an ECDSA signature against a message and a public key.
-    async fn verify_ecdsa(
-        &self,
-        signature_hex: String,
-        message: String,
-        public_key_hex: String,
-    ) -> bool;
+    async fn verify_ecdsa(&self, signature_hex: &str, message: &str, public_key_hex: &str) -> bool;
 }
 
 /// Types of signers.
@@ -159,30 +152,31 @@ impl Wallet {
 
             let message = secp256k1::Message::from_digest(sighash.to_byte_array());
 
+            debug!("Signing transaction and verifying signature");
             let signature = match &self.signer {
                 WalletType::External { signer } => {
-                    let sig = signer.sign_with_ecdsa(hex::encode(sighash)).await;
-                    Signature::from_str(&sig)?
+                    let msg_hex = hex::encode(sighash);
+                    // sign
+                    let sig_hex = signer.sign_with_ecdsa(&msg_hex).await;
+                    let signature = Signature::from_compact(&hex::decode(&sig_hex)?)?;
+
+                    // verify
+                    signer
+                        .verify_ecdsa(&sig_hex, &msg_hex, &own_pubkey.to_string())
+                        .await;
+                    signature
                 }
                 WalletType::Local { private_key } => {
-                    self.secp.sign_ecdsa(&message, &private_key.inner)
+                    // sign
+                    let signature = self.secp.sign_ecdsa(&message, &private_key.inner);
+                    // verify
+                    self.secp
+                        .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
+                    signature
                 }
             };
 
             debug!("signature: {}", signature.serialize_der());
-            // verify signature
-            debug!("verifying signature");
-
-            match &self.signer {
-                WalletType::External { signer: _ } => {
-                    continue;
-                }
-                WalletType::Local { private_key: _ } => {
-                    self.secp
-                        .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
-                }
-            }
-            debug!("signature verified");
 
             // append witness
             let signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
