@@ -15,12 +15,14 @@ use crate::{OrdError, OrdResult};
 /// An abstraction over a transaction signer.
 #[async_trait::async_trait]
 pub trait ExternalSigner {
-    async fn sign(
-        &self,
-        key_name: String,
-        derivation_path: Vec<Vec<u8>>,
-        message_hash: Vec<u8>,
-    ) -> Vec<u8>;
+    /// Retrieves the ECDSA public key at the given derivation path.
+    async fn ecdsa_public_key(&self) -> String;
+
+    /// Signs a message with an ECDSA key and returns the signature.
+    async fn sign_with_ecdsa(&self, message: &str) -> String;
+
+    /// Verifies an ECDSA signature against a message and a public key.
+    async fn verify_ecdsa(&self, signature_hex: &str, message: &str, public_key_hex: &str) -> bool;
 }
 
 /// Types of signers.
@@ -35,23 +37,15 @@ pub enum WalletType {
 
 /// An Ordinal-aware Bitcoin wallet.
 pub struct Wallet {
+    pub signer: WalletType,
     secp: Secp256k1<All>,
-    pub key_name: Option<String>,
-    pub derivation_path: Option<Vec<Vec<u8>>>,
-    pub wallet_type: WalletType,
 }
 
 impl Wallet {
-    pub fn new_with_signer(
-        key_name: Option<String>,
-        derivation_path: Option<Vec<Vec<u8>>>,
-        wallet_type: WalletType,
-    ) -> Self {
+    pub fn new_with_signer(signer: WalletType) -> Self {
         Self {
+            signer,
             secp: Secp256k1::new(),
-            key_name,
-            derivation_path,
-            wallet_type,
         }
     }
 
@@ -141,7 +135,7 @@ impl Wallet {
     ) -> OrdResult<Transaction> {
         let mut hash = SighashCache::new(transaction.clone());
         for (index, input) in utxos.iter().enumerate() {
-            let signature_hash = match transaction_type {
+            let sighash = match transaction_type {
                 TransactionType::Commit => hash.p2wpkh_signature_hash(
                     index,
                     script,
@@ -156,32 +150,34 @@ impl Wallet {
                 )?,
             };
 
-            let message = secp256k1::Message::from_digest(signature_hash.to_byte_array());
+            let message = secp256k1::Message::from_digest(sighash.to_byte_array());
 
-            let signature = match &self.wallet_type {
+            debug!("Signing transaction and verifying signature");
+            let signature = match &self.signer {
                 WalletType::External { signer } => {
+                    let msg_hex = hex::encode(sighash);
+                    // sign
+                    let sig_hex = signer.sign_with_ecdsa(&msg_hex).await;
+                    let signature = Signature::from_compact(&hex::decode(&sig_hex)?)?;
+
+                    // verify
                     signer
-                        .sign(
-                            self.key_name.clone().unwrap(),
-                            self.derivation_path.clone().unwrap(),
-                            signature_hash.as_byte_array().to_vec(),
-                        )
-                        .await
+                        .verify_ecdsa(&sig_hex, &msg_hex, &own_pubkey.to_string())
+                        .await;
+                    signature
                 }
                 WalletType::Local { private_key } => {
-                    let sig = self.secp.sign_ecdsa(&message, &private_key.inner);
-                    sig.serialize_der().to_vec()
+                    // sign
+                    let signature = self.secp.sign_ecdsa(&message, &private_key.inner);
+                    // verify
+                    self.secp
+                        .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
+                    signature
                 }
             };
 
-            let signature = Signature::from_der(&signature)?;
             debug!("signature: {}", signature.serialize_der());
-            // verify signature
-            debug!("verifying signature");
 
-            self.secp
-                .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
-            debug!("signature verified");
             // append witness
             let signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
             match transaction_type {

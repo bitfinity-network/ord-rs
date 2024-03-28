@@ -4,7 +4,7 @@ use argh::FromArgs;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, PrivateKey};
 use log::{debug, info};
-use ord_rs::wallet::{CreateCommitTransactionArgs, RevealTransactionArgs};
+use ord_rs::wallet::{CreateCommitTransactionArgsV2, RevealTransactionArgs};
 use ord_rs::{Brc20, OrdTransactionBuilder};
 
 use self::utils::rpc_client;
@@ -79,9 +79,9 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let commit_tx = builder
-        .build_commit_transaction(
+        .build_commit_transaction_with_fixed_fees(
             network,
-            CreateCommitTransactionArgs {
+            CreateCommitTransactionArgsV2 {
                 inputs,
                 inscription: Brc20::mint(ticker, amount),
                 txin_script_pubkey: sender_address.script_pubkey(),

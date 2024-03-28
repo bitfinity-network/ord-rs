@@ -1,5 +1,6 @@
 use bitcoin::{Amount, Network};
 
+#[allow(dead_code)]
 pub struct Fees {
     pub commit_fee: Amount,
     pub reveal_fee: Amount,
