@@ -33,7 +33,6 @@ pub use inscription::Inscription;
 pub use result::OrdResult;
 pub use utils::fees::MultisigConfig;
 pub use wallet::{
-    CreateCommitTransaction, CreateCommitTransactionArgs, CreateCommitTransactionArgsV2,
-    ExternalSigner, OrdParser, OrdTransactionBuilder, RevealTransactionArgs, Utxo, Wallet,
-    WalletType,
+    CreateCommitTransaction, CreateCommitTransactionArgs, ExternalSigner, OrdParser,
+    OrdTransactionBuilder, RevealTransactionArgs, Utxo, Wallet, WalletType,
 };

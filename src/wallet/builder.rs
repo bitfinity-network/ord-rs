@@ -38,26 +38,6 @@ where
     pub inscription: T,
     /// Address to send the leftovers BTC of the trasnsaction
     pub leftovers_recipient: Address,
-    /// Fee to pay for the commit transaction
-    pub commit_fee: Amount,
-    /// Fee to pay for the reveal transaction
-    pub reveal_fee: Amount,
-    /// Script pubkey of the inputs
-    pub txin_script_pubkey: ScriptBuf,
-}
-
-#[derive(Debug)]
-/// Arguments for creating a commit transaction
-pub struct CreateCommitTransactionArgsV2<T>
-where
-    T: Inscription,
-{
-    /// UTXOs to be used as inputs of the transaction
-    pub inputs: Vec<Utxo>,
-    /// Inscription to write
-    pub inscription: T,
-    /// Address to send the leftovers BTC of the trasnsaction
-    pub leftovers_recipient: Address,
     /// Script pubkey of the inputs
     pub txin_script_pubkey: ScriptBuf,
     /// Current fee rate on the network
@@ -111,11 +91,11 @@ impl OrdTransactionBuilder {
     }
 
     /// Creates the commit transaction.
-    pub async fn build_commit_transaction_v2<T>(
+    pub async fn build_commit_transaction<T>(
         &mut self,
         network: Network,
         recipient_address: Address,
-        args: CreateCommitTransactionArgsV2<T>,
+        args: CreateCommitTransactionArgs<T>,
     ) -> OrdResult<CreateCommitTransaction>
     where
         T: Inscription,
@@ -248,11 +228,96 @@ impl OrdTransactionBuilder {
         })
     }
 
-    /// Creates the commit transaction.
-    pub async fn build_commit_transaction<T>(
+    /// Create the reveal transaction
+    pub async fn build_reveal_transaction(
+        &mut self,
+        args: RevealTransactionArgs,
+    ) -> OrdResult<Transaction> {
+        // previous output
+        let previous_output = OutPoint {
+            txid: args.input.id,
+            vout: args.input.index,
+        };
+        // tx out
+        let tx_out = vec![TxOut {
+            value: Amount::from_sat(POSTAGE),
+            script_pubkey: args.recipient_address.script_pubkey(),
+        }];
+        // txin
+        let tx_in = vec![TxIn {
+            previous_output,
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::from_consensus(0xffffffff),
+            witness: Witness::new(),
+        }];
+
+        // make transaction and sign it
+        let unsigned_tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: tx_in,
+            output: tx_out,
+        };
+
+        let tx = match self.taproot_payload.as_ref() {
+            Some(taproot_payload) => self.signer.sign_reveal_transaction_schnorr(
+                taproot_payload,
+                &args.redeem_script,
+                unsigned_tx,
+            ),
+            None => {
+                self.signer
+                    .sign_reveal_transaction_ecdsa(
+                        &self.public_key,
+                        &args.input,
+                        unsigned_tx,
+                        &args.redeem_script,
+                    )
+                    .await
+            }
+        }?;
+
+        Ok(tx)
+    }
+
+    /// Generate redeem script from script pubkey and inscription
+    fn generate_redeem_script<T>(
+        &self,
+        inscription: &T,
+        pubkey: RedeemScriptPubkey,
+    ) -> OrdResult<ScriptBuf>
+    where
+        T: Inscription,
+    {
+        Ok(inscription
+            .generate_redeem_script(ScriptBuilder::new(), pubkey)?
+            .into_script())
+    }
+
+    /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2TR as script type (preferred).
+    pub fn p2tr(private_key: bitcoin::PrivateKey) -> Self {
+        use signer::WalletType;
+
+        let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
+        let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
+        Self::new(public_key, ScriptType::P2TR, wallet)
+    }
+
+    /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2WSH as script type.
+    /// P2WSH may not be supported by all the indexers, so P2TR should be preferred.
+    pub fn p2wsh(private_key: bitcoin::PrivateKey) -> Self {
+        use signer::WalletType;
+
+        let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
+        let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
+        Self::new(public_key, ScriptType::P2WSH, wallet)
+    }
+
+    /// Creates the commit transaction with predetermined commit and reveal fees.
+    pub async fn build_commit_transaction_with_fixed_fees<T>(
         &mut self,
         network: Network,
-        args: CreateCommitTransactionArgs<T>,
+        args: CreateCommitTransactionArgsV2<T>,
     ) -> OrdResult<CreateCommitTransaction>
     where
         T: Inscription,
@@ -360,91 +425,26 @@ impl OrdTransactionBuilder {
             reveal_balance: Amount::from_sat(reveal_balance),
         })
     }
+}
 
-    /// Create the reveal transaction
-    pub async fn build_reveal_transaction(
-        &mut self,
-        args: RevealTransactionArgs,
-    ) -> OrdResult<Transaction> {
-        // previous output
-        let previous_output = OutPoint {
-            txid: args.input.id,
-            vout: args.input.index,
-        };
-        // tx out
-        let tx_out = vec![TxOut {
-            value: Amount::from_sat(POSTAGE),
-            script_pubkey: args.recipient_address.script_pubkey(),
-        }];
-        // txin
-        let tx_in = vec![TxIn {
-            previous_output,
-            script_sig: ScriptBuf::new(),
-            sequence: Sequence::from_consensus(0xffffffff),
-            witness: Witness::new(),
-        }];
-
-        // make transaction and sign it
-        let unsigned_tx = Transaction {
-            version: Version::TWO,
-            lock_time: LockTime::ZERO,
-            input: tx_in,
-            output: tx_out,
-        };
-
-        let tx = match self.taproot_payload.as_ref() {
-            Some(taproot_payload) => self.signer.sign_reveal_transaction_schnorr(
-                taproot_payload,
-                &args.redeem_script,
-                unsigned_tx,
-            ),
-            None => {
-                self.signer
-                    .sign_reveal_transaction_ecdsa(
-                        &self.public_key,
-                        &args.input,
-                        unsigned_tx,
-                        &args.redeem_script,
-                    )
-                    .await
-            }
-        }?;
-
-        Ok(tx)
-    }
-
-    /// Generate redeem script from script pubkey and inscription
-    fn generate_redeem_script<T>(
-        &self,
-        inscription: &T,
-        pubkey: RedeemScriptPubkey,
-    ) -> OrdResult<ScriptBuf>
-    where
-        T: Inscription,
-    {
-        Ok(inscription
-            .generate_redeem_script(ScriptBuilder::new(), pubkey)?
-            .into_script())
-    }
-
-    /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2TR as script type (preferred).
-    pub fn p2tr(private_key: bitcoin::PrivateKey) -> Self {
-        use signer::WalletType;
-
-        let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
-        let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
-        Self::new(public_key, ScriptType::P2TR, wallet)
-    }
-
-    /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2WSH as script type.
-    /// P2WSH may not be supported by all the indexers, so P2TR should be preferred.
-    pub fn p2wsh(private_key: bitcoin::PrivateKey) -> Self {
-        use signer::WalletType;
-
-        let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
-        let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
-        Self::new(public_key, ScriptType::P2WSH, wallet)
-    }
+#[derive(Debug)]
+/// Arguments for creating a commit transaction
+pub struct CreateCommitTransactionArgsV2<T>
+where
+    T: Inscription,
+{
+    /// UTXOs to be used as inputs of the transaction
+    pub inputs: Vec<Utxo>,
+    /// Inscription to write
+    pub inscription: T,
+    /// Address to send the leftovers BTC of the trasnsaction
+    pub leftovers_recipient: Address,
+    /// Fee to pay for the commit transaction
+    pub commit_fee: Amount,
+    /// Fee to pay for the reveal transaction
+    pub reveal_fee: Amount,
+    /// Script pubkey of the inputs
+    pub txin_script_pubkey: ScriptBuf,
 }
 
 /// Unspent transaction output to be used as input of a transaction
@@ -481,7 +481,7 @@ mod test {
 
         let mut builder = OrdTransactionBuilder::p2wsh(private_key);
 
-        let commit_transaction_args = CreateCommitTransactionArgs {
+        let commit_transaction_args = CreateCommitTransactionArgsV2 {
             inputs: vec![Utxo {
                 id: Txid::from_str(
                     "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
@@ -497,7 +497,7 @@ mod test {
             reveal_fee: Amount::from_sat(4_700),
         };
         let tx_result = builder
-            .build_commit_transaction(Network::Testnet, commit_transaction_args)
+            .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
             .await
             .unwrap();
 
@@ -585,7 +585,7 @@ mod test {
 
         let mut builder = OrdTransactionBuilder::p2tr(private_key);
 
-        let commit_transaction_args = CreateCommitTransactionArgs {
+        let commit_transaction_args = CreateCommitTransactionArgsV2 {
             inputs: vec![Utxo {
                 id: Txid::from_str(
                     "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
@@ -601,7 +601,7 @@ mod test {
             reveal_fee: Amount::from_sat(4_700),
         };
         let tx_result = builder
-            .build_commit_transaction(Network::Testnet, commit_transaction_args)
+            .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
             .await
             .unwrap();
 
