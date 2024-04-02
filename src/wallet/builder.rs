@@ -46,14 +46,25 @@ where
     pub multisig_config: Option<MultisigConfig>,
 }
 
+pub struct SignCommitTransactionArgs {
+    /// UTXOs to be used as inputs of the transaction
+    pub inputs: Vec<Utxo>,
+    /// Script pubkey of the inputs
+    pub txin_script_pubkey: ScriptBuf,
+}
+
 #[derive(Debug, Clone)]
 pub struct CreateCommitTransaction {
-    /// The transaction to be broadcasted
-    pub tx: Transaction,
+    /// The unsigned commit transaction
+    pub unsigned_tx: Transaction,
     /// The redeem script to be used in the reveal transaction
     pub redeem_script: ScriptBuf,
     /// Balance to be passed to reveal transaction
     pub reveal_balance: Amount,
+    /// Commit transaction fee
+    pub commit_fee: Amount,
+    /// Reveal transaction fee
+    pub reveal_fee: Amount,
 }
 
 /// Arguments for creating a reveal transaction
@@ -91,7 +102,7 @@ impl OrdTransactionBuilder {
     }
 
     /// Creates the commit transaction.
-    pub async fn build_commit_transaction<T>(
+    pub fn build_commit_transaction<T>(
         &mut self,
         network: Network,
         recipient_address: Address,
@@ -210,22 +221,30 @@ impl OrdTransactionBuilder {
             output: tx_out,
         };
 
+        Ok(CreateCommitTransaction {
+            unsigned_tx,
+            redeem_script,
+            reveal_balance: Amount::from_sat(reveal_balance),
+            commit_fee,
+            reveal_fee,
+        })
+    }
+
+    /// Sign the commit transaction
+    pub async fn sign_commit_transaction(
+        &mut self,
+        unsigned_tx: Transaction,
+        args: SignCommitTransactionArgs,
+    ) -> OrdResult<Transaction> {
         // sign transaction and update witness
-        let tx = self
-            .signer
+        self.signer
             .sign_commit_transaction(
                 &self.public_key,
                 &args.inputs,
                 unsigned_tx,
                 &args.txin_script_pubkey,
             )
-            .await?;
-
-        Ok(CreateCommitTransaction {
-            tx,
-            redeem_script,
-            reveal_balance: Amount::from_sat(reveal_balance),
-        })
+            .await
     }
 
     /// Create the reveal transaction
@@ -314,7 +333,7 @@ impl OrdTransactionBuilder {
     }
 
     /// Creates the commit transaction with predetermined commit and reveal fees.
-    pub async fn build_commit_transaction_with_fixed_fees<T>(
+    pub fn build_commit_transaction_with_fixed_fees<T>(
         &mut self,
         network: Network,
         args: CreateCommitTransactionArgsV2<T>,
@@ -408,21 +427,12 @@ impl OrdTransactionBuilder {
             output: tx_out,
         };
 
-        // sign transaction and update witness
-        let tx = self
-            .signer
-            .sign_commit_transaction(
-                &self.public_key,
-                &args.inputs,
-                unsigned_tx,
-                &args.txin_script_pubkey,
-            )
-            .await?;
-
         Ok(CreateCommitTransaction {
-            tx,
+            unsigned_tx,
             redeem_script,
             reveal_balance: Amount::from_sat(reveal_balance),
+            reveal_fee: args.reveal_fee,
+            commit_fee: args.commit_fee,
         })
     }
 }
@@ -481,15 +491,14 @@ mod test {
 
         let mut builder = OrdTransactionBuilder::p2wsh(private_key);
 
-        let commit_transaction_args = CreateCommitTransactionArgsV2 {
-            inputs: vec![Utxo {
-                id: Txid::from_str(
-                    "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
-                )
+        let inputs = vec![Utxo {
+            id: Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7")
                 .unwrap(), // the transaction that funded our wallet
-                index: 1,
-                amount: Amount::from_sat(8_000),
-            }],
+            index: 1,
+            amount: Amount::from_sat(8_000),
+        }];
+        let commit_transaction_args = CreateCommitTransactionArgsV2 {
+            inputs: inputs.clone(),
             txin_script_pubkey: address.script_pubkey(),
             inscription: Brc20::transfer("mona".to_string(), 100),
             leftovers_recipient: address.clone(),
@@ -498,12 +507,21 @@ mod test {
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
+            .unwrap();
+
+        // sign
+        let sign_args = SignCommitTransactionArgs {
+            inputs,
+            txin_script_pubkey: address.script_pubkey(),
+        };
+        let tx = builder
+            .sign_commit_transaction(tx_result.unsigned_tx, sign_args)
             .await
             .unwrap();
 
         assert!(builder.taproot_payload.is_none());
 
-        let witness = tx_result.tx.input[0].witness.clone().to_vec();
+        let witness = tx.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 2);
         assert_eq!(witness[0], hex!("30440220708c02ce8166b739f4190bf98538c897f676adc1304bb368ebe910f817fd489602205d708a826b416c2852a6bd7ea464fde8ef3a08eb2fc085ec9e71ed71f6dc582901"));
         assert_eq!(
@@ -519,23 +537,20 @@ mod test {
         );
 
         // txin
-        assert_eq!(tx_result.tx.input.len(), 1);
+        assert_eq!(tx.input.len(), 1);
+        assert_eq!(tx.input[0].sequence, Sequence::from_consensus(0xffffffff));
         assert_eq!(
-            tx_result.tx.input[0].sequence,
-            Sequence::from_consensus(0xffffffff)
-        );
-        assert_eq!(
-            tx_result.tx.input[0].previous_output.txid,
+            tx.input[0].previous_output.txid,
             Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",)
                 .unwrap()
         );
 
         // txout
-        assert_eq!(tx_result.tx.output.len(), 2);
-        assert_eq!(tx_result.tx.output[0].value, Amount::from_sat(5_033));
-        assert_eq!(tx_result.tx.output[1].value, Amount::from_sat(467));
+        assert_eq!(tx.output.len(), 2);
+        assert_eq!(tx.output[0].value, Amount::from_sat(5_033));
+        assert_eq!(tx.output[1].value, Amount::from_sat(467));
 
-        let tx_id = tx_result.tx.txid();
+        let tx_id = tx.txid();
         let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
             .unwrap()
             .require_network(Network::Testnet)
@@ -585,15 +600,14 @@ mod test {
 
         let mut builder = OrdTransactionBuilder::p2tr(private_key);
 
+        let inputs = vec![Utxo {
+            id: Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7")
+                .unwrap(), // the transaction that funded our wallet
+            index: 1,
+            amount: Amount::from_sat(8_000),
+        }];
         let commit_transaction_args = CreateCommitTransactionArgsV2 {
-            inputs: vec![Utxo {
-                id: Txid::from_str(
-                    "791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7",
-                )
-                .unwrap(), // the transaction that funded our walle
-                index: 1,
-                amount: Amount::from_sat(8_000),
-            }],
+            inputs: inputs.clone(),
             txin_script_pubkey: address.script_pubkey(),
             inscription: Brc20::transfer("mona".to_string(), 100),
             leftovers_recipient: address.clone(),
@@ -602,12 +616,21 @@ mod test {
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
-            .await
             .unwrap();
 
         assert!(builder.taproot_payload.is_some());
 
-        let witness = tx_result.tx.input[0].witness.clone().to_vec();
+        // sign
+        let sign_args = SignCommitTransactionArgs {
+            inputs,
+            txin_script_pubkey: address.script_pubkey(),
+        };
+        let tx = builder
+            .sign_commit_transaction(tx_result.unsigned_tx, sign_args)
+            .await
+            .unwrap();
+
+        let witness = tx.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 2);
         assert_eq!(
             witness[1],
@@ -630,7 +653,7 @@ mod test {
             bitcoin::opcodes::all::OP_PUSHBYTES_32.to_u8()
         );
 
-        let tx_id = tx_result.tx.txid();
+        let tx_id = tx.txid();
         let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
             .unwrap()
             .require_network(Network::Testnet)

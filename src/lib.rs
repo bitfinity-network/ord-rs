@@ -34,5 +34,6 @@ pub use result::OrdResult;
 pub use utils::fees::{self, MultisigConfig};
 pub use wallet::{
     CreateCommitTransaction, CreateCommitTransactionArgs, ExternalSigner, OrdParser,
-    OrdTransactionBuilder, RevealTransactionArgs, Utxo, Wallet, WalletType,
+    OrdTransactionBuilder, RevealTransactionArgs, SignCommitTransactionArgs, Utxo, Wallet,
+    WalletType,
 };

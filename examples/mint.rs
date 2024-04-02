@@ -5,7 +5,7 @@ use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, PrivateKey};
 use log::{debug, info};
 use ord_rs::wallet::{CreateCommitTransactionArgsV2, RevealTransactionArgs};
-use ord_rs::{Brc20, OrdTransactionBuilder};
+use ord_rs::{Brc20, OrdTransactionBuilder, SignCommitTransactionArgs};
 
 use self::utils::rpc_client;
 use crate::utils::{calc_fees, Fees};
@@ -78,26 +78,37 @@ async fn main() -> anyhow::Result<()> {
         _ => panic!("invalid script type"),
     };
 
-    let commit_tx = builder
-        .build_commit_transaction_with_fixed_fees(
-            network,
-            CreateCommitTransactionArgsV2 {
+    let commit_tx = builder.build_commit_transaction_with_fixed_fees(
+        network,
+        CreateCommitTransactionArgsV2 {
+            inputs: inputs.clone(),
+            inscription: Brc20::mint(ticker, amount),
+            txin_script_pubkey: sender_address.script_pubkey(),
+            leftovers_recipient: sender_address.clone(),
+            commit_fee,
+            reveal_fee,
+        },
+    )?;
+
+    let signed_commit_tx = builder
+        .sign_commit_transaction(
+            commit_tx.unsigned_tx,
+            SignCommitTransactionArgs {
                 inputs,
-                inscription: Brc20::mint(ticker, amount),
                 txin_script_pubkey: sender_address.script_pubkey(),
-                leftovers_recipient: sender_address.clone(),
-                commit_fee,
-                reveal_fee,
             },
         )
         .await?;
-    debug!("commit transaction: {commit_tx:?}");
+    debug!("commit transaction: {signed_commit_tx:?}");
 
     let commit_txid = if args.dry_run {
-        commit_tx.tx.txid()
+        signed_commit_tx.txid()
     } else {
-        info!("broadcasting Commit transaction: {}", commit_tx.tx.txid());
-        rpc_client::broadcast_transaction(&commit_tx.tx, network).await?
+        info!(
+            "broadcasting Commit transaction: {}",
+            signed_commit_tx.txid()
+        );
+        rpc_client::broadcast_transaction(&signed_commit_tx, network).await?
     };
     info!("Commit transaction broadcasted: {}", commit_txid);
 
