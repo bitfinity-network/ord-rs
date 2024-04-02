@@ -31,6 +31,7 @@ pub use inscription::brc20::Brc20;
 pub use inscription::nft::Nft;
 pub use inscription::Inscription;
 pub use result::OrdResult;
+pub use utils::constants;
 pub use utils::fees::{self, MultisigConfig};
 pub use wallet::{
     CreateCommitTransaction, CreateCommitTransactionArgs, ExternalSigner, OrdParser,
