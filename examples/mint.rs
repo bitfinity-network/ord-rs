@@ -4,8 +4,10 @@ use argh::FromArgs;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, PrivateKey};
 use log::{debug, info};
-use ord_rs::wallet::{CreateCommitTransactionArgsV2, RevealTransactionArgs};
-use ord_rs::{Brc20, OrdTransactionBuilder, SignCommitTransactionArgs};
+use ord_rs::wallet::{
+    CreateCommitTransactionArgsV2, RevealTransactionArgs, SignCommitTransactionArgs,
+};
+use ord_rs::{Brc20, OrdTransactionBuilder};
 
 use self::utils::rpc_client;
 use crate::utils::{calc_fees, Fees};
