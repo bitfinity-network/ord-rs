@@ -1,16 +1,16 @@
+use bitcoin::hashes::Hash as _;
+use bitcoin::key::Secp256k1;
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::{self, All};
+use bitcoin::sighash::{Prevouts, SighashCache};
+use bitcoin::taproot::{ControlBlock, LeafVersion};
 use bitcoin::{
     PrivateKey, PublicKey, ScriptBuf, SegwitV0Sighash, TapLeafHash, TapSighashType, Transaction,
     Witness,
 };
-use bitcoin::hashes::Hash as _;
-use bitcoin::key::Secp256k1;
-use bitcoin::secp256k1::{self, All};
-use bitcoin::secp256k1::ecdsa::Signature;
-use bitcoin::sighash::{Prevouts, SighashCache};
-use bitcoin::taproot::{ControlBlock, LeafVersion};
 
-use crate::{OrdError, OrdResult};
 use crate::wallet::builder::TxInputInfo;
+use crate::{OrdError, OrdResult};
 
 use super::super::builder::Utxo;
 use super::taproot::TaprootPayload;

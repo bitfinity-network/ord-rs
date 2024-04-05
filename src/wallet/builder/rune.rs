@@ -1,12 +1,12 @@
+use bitcoin::{Address, Amount, FeeRate, ScriptBuf, Transaction, TxIn, TxOut};
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::Version;
-use bitcoin::{Address, Amount, FeeRate, ScriptBuf, Transaction, TxIn, TxOut};
 use ordinals::{Edict, RuneId, Runestone};
 
+use crate::{OrdError, OrdTransactionBuilder};
 use crate::fees::estimate_transaction_fees;
 use crate::wallet::builder::TxInputInfo;
 use crate::wallet::ScriptType;
-use crate::{OrdError, OrdTransactionBuilder};
 
 /// Postage amount for rune transaction.
 ///
@@ -108,8 +108,13 @@ impl OrdTransactionBuilder {
             output: outputs,
         };
 
-        let fee_amount =
-            estimate_transaction_fees(ScriptType::P2WSH, unsigned_tx.vsize(), args.fee_rate, &None);
+        let fee_amount = estimate_transaction_fees(
+            ScriptType::P2WSH,
+            unsigned_tx.vsize(),
+            unsigned_tx.input.len(),
+            args.fee_rate,
+            &None,
+        );
         let change_amount = args
             .input_amount()
             .checked_sub(fee_amount + RUNE_POSTAGE * 2)
