@@ -65,6 +65,8 @@ pub struct CreateCommitTransaction {
     pub commit_fee: Amount,
     /// Reveal transaction fee
     pub reveal_fee: Amount,
+    /// Leftover amount to be sent to the leftovers recipient
+    pub leftover_amount: Amount,
 }
 
 /// Arguments for creating a reveal transaction
@@ -227,6 +229,7 @@ impl OrdTransactionBuilder {
             reveal_balance: Amount::from_sat(reveal_balance),
             commit_fee,
             reveal_fee,
+            leftover_amount: Amount::from_sat(leftover_amount),
         })
     }
 
@@ -433,6 +436,7 @@ impl OrdTransactionBuilder {
             reveal_balance: Amount::from_sat(reveal_balance),
             reveal_fee: args.reveal_fee,
             commit_fee: args.commit_fee,
+            leftover_amount: Amount::from_sat(leftover_amount),
         })
     }
 }
