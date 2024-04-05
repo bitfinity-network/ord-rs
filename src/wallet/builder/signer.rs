@@ -9,11 +9,10 @@ use bitcoin::{
     Witness,
 };
 
-use crate::wallet::builder::TxInputInfo;
-use crate::{OrdError, OrdResult};
-
 use super::super::builder::Utxo;
 use super::taproot::TaprootPayload;
+use crate::wallet::builder::TxInputInfo;
+use crate::{OrdError, OrdResult};
 
 /// An abstraction over a transaction signer.
 #[async_trait::async_trait]

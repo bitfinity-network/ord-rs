@@ -1,12 +1,12 @@
-use bitcoin::{Address, Amount, FeeRate, ScriptBuf, Transaction, TxIn, TxOut};
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::Version;
+use bitcoin::{Address, Amount, FeeRate, ScriptBuf, Transaction, TxIn, TxOut};
 use ordinals::{Edict, RuneId, Runestone};
 
-use crate::{OrdError, OrdTransactionBuilder};
 use crate::fees::estimate_transaction_fees;
 use crate::wallet::builder::TxInputInfo;
 use crate::wallet::ScriptType;
+use crate::{OrdError, OrdTransactionBuilder};
 
 /// Postage amount for rune transaction.
 ///

@@ -5,16 +5,14 @@ use bitcoin::{
     secp256k1, Address, Amount, FeeRate, Network, OutPoint, PublicKey, ScriptBuf, Sequence,
     Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
-
 use signer::Wallet;
 
+use super::builder::taproot::{generate_keypair, TaprootPayload};
 use crate::inscription::Inscription;
 use crate::utils::constants::POSTAGE;
 use crate::utils::fees::{estimate_commit_fee, estimate_reveal_fee, MultisigConfig};
 use crate::utils::push_bytes::bytes_to_push_bytes;
 use crate::{OrdError, OrdResult};
-
-use super::builder::taproot::{generate_keypair, TaprootPayload};
 
 #[cfg(feature = "rune")]
 mod rune;
@@ -517,9 +515,8 @@ mod test {
     use bitcoin::PrivateKey;
     use hex_literal::hex;
 
-    use crate::Brc20;
-
     use super::*;
+    use crate::Brc20;
 
     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";

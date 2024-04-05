@@ -20,7 +20,6 @@ extern crate log;
 extern crate serde;
 
 pub use bitcoin;
-
 pub use error::{InscriptionParseError, OrdError};
 pub use inscription::brc20::Brc20;
 pub use inscription::nft::Nft;
