@@ -19,13 +19,8 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
-mod error;
-pub mod inscription;
-mod result;
-mod utils;
-pub mod wallet;
-
 pub use bitcoin;
+
 pub use error::{InscriptionParseError, OrdError};
 pub use inscription::brc20::Brc20;
 pub use inscription::nft::Nft;
@@ -38,3 +33,9 @@ pub use wallet::{
     OrdTransactionBuilder, RevealTransactionArgs, SignCommitTransactionArgs, Utxo, Wallet,
     WalletType,
 };
+
+mod error;
+pub mod inscription;
+mod result;
+mod utils;
+pub mod wallet;

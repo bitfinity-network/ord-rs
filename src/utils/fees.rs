@@ -79,7 +79,7 @@ pub fn estimate_reveal_fee(
     )
 }
 
-fn estimate_transaction_fees(
+pub fn estimate_transaction_fees(
     script_type: ScriptType,
     unsigned_tx_size: usize,
     number_of_inputs: usize,

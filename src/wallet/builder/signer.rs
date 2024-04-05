@@ -1,16 +1,19 @@
+use bitcoin::{
+    PrivateKey, PublicKey, ScriptBuf, SegwitV0Sighash, TapLeafHash, TapSighashType, Transaction,
+    Witness,
+};
 use bitcoin::hashes::Hash as _;
 use bitcoin::key::Secp256k1;
-use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::{self, All};
+use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::sighash::{Prevouts, SighashCache};
 use bitcoin::taproot::{ControlBlock, LeafVersion};
-use bitcoin::{
-    PrivateKey, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, Transaction, Witness,
-};
+
+use crate::{OrdError, OrdResult};
+use crate::wallet::builder::TxInputInfo;
 
 use super::super::builder::Utxo;
 use super::taproot::TaprootPayload;
-use crate::{OrdError, OrdResult};
 
 /// An abstraction over a transaction signer.
 #[async_trait::async_trait]
@@ -125,6 +128,54 @@ impl Wallet {
         Ok(sighash_cache.into_transaction())
     }
 
+    /// Sign a generic transaction.
+    ///
+    /// The given transaction must have the same inputs as the ones given in the `prev_outs` argument.
+    /// The signature is checked against the given `own_pubkey` public key before being accepted
+    /// as valid and returned.
+    pub async fn sign_transaction(
+        &self,
+        transaction: &Transaction,
+        prev_outs: &[TxInputInfo],
+        own_pubkey: &PublicKey,
+    ) -> OrdResult<Transaction> {
+        if transaction.input.len() != prev_outs.len() {
+            return Err(OrdError::InvalidInputs);
+        }
+
+        let mut cache = SighashCache::new(transaction.clone());
+        for (index, input) in prev_outs.iter().enumerate() {
+            let sighash = match &input.tx_out.script_pubkey {
+                s if s.is_p2wpkh() => cache.p2wpkh_signature_hash(
+                    index,
+                    s,
+                    input.tx_out.value,
+                    bitcoin::EcdsaSighashType::All,
+                )?,
+                s if s.is_p2wsh() => cache.p2wsh_signature_hash(
+                    index,
+                    s,
+                    input.tx_out.value,
+                    bitcoin::EcdsaSighashType::All,
+                )?,
+                _ => return Err(OrdError::InvalidScriptType),
+            };
+            let signature = self.sign_msg_hash(sighash, own_pubkey).await?;
+            let ord_signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
+
+            self.append_witness_to_input(
+                &mut cache,
+                ord_signature,
+                index,
+                &own_pubkey.inner,
+                None,
+                None,
+            )?;
+        }
+
+        Ok(cache.into_transaction())
+    }
+
     async fn sign_ecdsa(
         &mut self,
         own_pubkey: &PublicKey,
@@ -150,33 +201,7 @@ impl Wallet {
                 )?,
             };
 
-            let message = secp256k1::Message::from_digest(sighash.to_byte_array());
-
-            debug!("Signing transaction and verifying signature");
-            let signature = match &self.signer {
-                WalletType::External { signer } => {
-                    let msg_hex = hex::encode(sighash);
-                    // sign
-                    let sig_hex = signer.sign_with_ecdsa(&msg_hex).await;
-                    let signature = Signature::from_compact(&hex::decode(&sig_hex)?)?;
-
-                    // verify
-                    signer
-                        .verify_ecdsa(&sig_hex, &msg_hex, &own_pubkey.to_string())
-                        .await;
-                    signature
-                }
-                WalletType::Local { private_key } => {
-                    // sign
-                    let signature = self.secp.sign_ecdsa(&message, &private_key.inner);
-                    // verify
-                    self.secp
-                        .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
-                    signature
-                }
-            };
-
-            debug!("signature: {}", signature.serialize_der());
+            let signature = self.sign_msg_hash(sighash, own_pubkey).await?;
 
             // append witness
             let signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
@@ -205,6 +230,42 @@ impl Wallet {
         }
 
         Ok(hash.into_transaction())
+    }
+
+    async fn sign_msg_hash(
+        &self,
+        sighash: SegwitV0Sighash,
+        own_pubkey: &PublicKey,
+    ) -> OrdResult<Signature> {
+        debug!("Signing transaction and verifying signature");
+        let signature = match &self.signer {
+            WalletType::External { signer } => {
+                let msg_hex = hex::encode(sighash);
+                // sign
+                let sig_hex = signer.sign_with_ecdsa(&msg_hex).await;
+                let signature = Signature::from_compact(&hex::decode(&sig_hex)?)?;
+
+                // verify
+                signer
+                    .verify_ecdsa(&sig_hex, &msg_hex, &own_pubkey.to_string())
+                    .await;
+                signature
+            }
+            WalletType::Local { private_key } => {
+                let message = secp256k1::Message::from_digest(sighash.to_byte_array());
+
+                // sign
+                let signature = self.secp.sign_ecdsa(&message, &private_key.inner);
+                // verify
+                self.secp
+                    .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
+                signature
+            }
+        };
+
+        debug!("signature: {}", signature.serialize_der());
+
+        Ok(signature)
     }
 
     fn append_witness_to_input(
