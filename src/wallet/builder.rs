@@ -2,7 +2,7 @@ pub mod signer;
 mod taproot;
 
 use bitcoin::absolute::LockTime;
-use bitcoin::script::Builder as ScriptBuilder;
+use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use bitcoin::transaction::Version;
 use bitcoin::{
     secp256k1, Address, Amount, FeeRate, Network, OutPoint, PublicKey, ScriptBuf, Sequence,
@@ -12,6 +12,7 @@ use signer::Wallet;
 
 use super::builder::taproot::{generate_keypair, TaprootPayload};
 use crate::inscription::Inscription;
+use crate::utils::bytes_to_push_bytes;
 use crate::utils::constants::POSTAGE;
 use crate::utils::fees::{estimate_commit_fee, estimate_reveal_fee, MultisigConfig};
 use crate::{OrdError, OrdResult};
@@ -91,6 +92,18 @@ pub enum ScriptType {
 pub enum RedeemScriptPubkey {
     Ecdsa(PublicKey),
     XPublickey(XOnlyPublicKey),
+}
+
+impl RedeemScriptPubkey {
+    /// Encode the public key to a push bytes buffer
+    pub fn encode(&self) -> OrdResult<PushBytesBuf> {
+        let encoded_pubkey = match self {
+            RedeemScriptPubkey::Ecdsa(pubkey) => bytes_to_push_bytes(&pubkey.to_bytes())?,
+            RedeemScriptPubkey::XPublickey(pubkey) => bytes_to_push_bytes(&pubkey.serialize())?,
+        };
+
+        Ok(encoded_pubkey)
+    }
 }
 
 impl OrdTransactionBuilder {

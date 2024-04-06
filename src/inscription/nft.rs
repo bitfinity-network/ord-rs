@@ -73,10 +73,7 @@ impl Inscription for Nft {
         builder: ScriptBuilder,
         pubkey: RedeemScriptPubkey,
     ) -> OrdResult<ScriptBuilder> {
-        let encoded_pubkey = match pubkey {
-            RedeemScriptPubkey::Ecdsa(pubkey) => bytes_to_push_bytes(&pubkey.to_bytes())?,
-            RedeemScriptPubkey::XPublickey(pubkey) => bytes_to_push_bytes(&pubkey.serialize())?,
-        };
+        let encoded_pubkey = pubkey.encode()?;
 
         let builder = builder
             .push_slice(encoded_pubkey.as_push_bytes())
