@@ -12,9 +12,9 @@ use signer::Wallet;
 
 use super::builder::taproot::{generate_keypair, TaprootPayload};
 use crate::inscription::Inscription;
-use crate::utils::bytes_to_push_bytes;
 use crate::utils::constants::POSTAGE;
 use crate::utils::fees::{estimate_commit_fee, estimate_reveal_fee, MultisigConfig};
+use crate::utils::push_bytes::bytes_to_push_bytes;
 use crate::{OrdError, OrdResult};
 
 /// Ordinal-aware transaction builder for arbitrary (`Nft`)

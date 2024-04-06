@@ -5,7 +5,7 @@ use bitcoin::opcodes::{OP_0, OP_FALSE};
 use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use serde_with::{serde_as, DisplayFromStr};
 
-use crate::utils::bytes_to_push_bytes;
+use crate::utils::push_bytes::bytes_to_push_bytes;
 use crate::wallet::RedeemScriptPubkey;
 use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
 

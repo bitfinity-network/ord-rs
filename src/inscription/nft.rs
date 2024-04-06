@@ -14,7 +14,8 @@ use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::utils::{self, bytes_to_push_bytes, constants};
+use crate::utils::constants;
+use crate::utils::push_bytes::bytes_to_push_bytes;
 use crate::wallet::RedeemScriptPubkey;
 use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
 
@@ -194,7 +195,7 @@ impl Nft {
 
     /// Returns `Self` as a JSON-encoded data to be pushed to the redeem script.
     pub fn as_push_bytes(&self) -> OrdResult<PushBytesBuf> {
-        utils::bytes_to_push_bytes(self.encode()?.as_bytes())
+        bytes_to_push_bytes(self.encode()?.as_bytes())
     }
 
     pub fn body(&self) -> Option<&[u8]> {
