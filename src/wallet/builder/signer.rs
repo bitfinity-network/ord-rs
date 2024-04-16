@@ -133,7 +133,7 @@ impl Wallet {
         index: usize,
         sighash_cache: &mut SighashCache<Transaction>,
     ) -> OrdResult<()> {
-        let prevouts = Prevouts::All(&prev_outs);
+        let prevouts = Prevouts::All(prev_outs);
         let sighash = sighash_cache.taproot_key_spend_signature_hash(
             index,
             &prevouts,

@@ -134,9 +134,8 @@ mod tests {
     use bitcoin::key::Secp256k1;
     use bitcoin::{Network, OutPoint, PrivateKey, PublicKey, Txid};
 
-    use crate::{Wallet, WalletType};
-
     use super::*;
+    use crate::{Wallet, WalletType};
 
     #[tokio::test]
     async fn create_edict_transaction() {
