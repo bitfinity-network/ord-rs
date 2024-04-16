@@ -5,6 +5,6 @@ pub use builder::signer::{ExternalSigner, Wallet, WalletType};
 pub use builder::{
     CreateCommitTransaction, CreateCommitTransactionArgs, CreateCommitTransactionArgsV2,
     OrdTransactionBuilder, RedeemScriptPubkey, RevealTransactionArgs, ScriptType,
-    SignCommitTransactionArgs, Utxo,
+    SignCommitTransactionArgs, TxInputInfo, Utxo,
 };
 pub use parser::OrdParser;
