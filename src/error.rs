@@ -33,6 +33,10 @@ pub enum OrdError {
     Utf8Encoding(#[from] std::str::Utf8Error),
     #[error("Inscription parser error: {0}")]
     InscriptionParser(#[from] InscriptionParseError),
+    #[error("Invalid inputs")]
+    InvalidInputs,
+    #[error("Invalid script type")]
+    InvalidScriptType,
 }
 
 /// Inscription parsing errors.

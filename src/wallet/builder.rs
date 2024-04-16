@@ -1,6 +1,3 @@
-pub mod signer;
-mod taproot;
-
 use bitcoin::absolute::LockTime;
 use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use bitcoin::transaction::Version;
@@ -16,6 +13,12 @@ use crate::utils::constants::POSTAGE;
 use crate::utils::fees::{estimate_commit_fee, estimate_reveal_fee, MultisigConfig};
 use crate::utils::push_bytes::bytes_to_push_bytes;
 use crate::{OrdError, OrdResult};
+
+#[cfg(feature = "rune")]
+mod rune;
+
+pub mod signer;
+mod taproot;
 
 /// Ordinal-aware transaction builder for arbitrary (`Nft`)
 /// and `Brc20` inscriptions.
@@ -263,6 +266,17 @@ impl OrdTransactionBuilder {
             .await
     }
 
+    /// Sign a generic transaction, returning a new signed transaction.
+    pub async fn sign_transaction(
+        &self,
+        unsigned_tx: &Transaction,
+        inputs: &[TxInputInfo],
+    ) -> OrdResult<Transaction> {
+        self.signer
+            .sign_transaction(unsigned_tx, inputs, &self.public_key)
+            .await
+    }
+
     /// Create the reveal transaction
     pub async fn build_reveal_transaction(
         &mut self,
@@ -480,6 +494,17 @@ pub struct Utxo {
     pub id: Txid,
     pub index: u32,
     pub amount: Amount,
+}
+
+/// Output of a previous transaction to be used as an input.
+///
+/// This struct contains signature script in contrast to [Utxo] so it can be used to sign inputs
+/// from different addresses.
+pub struct TxInputInfo {
+    /// ID of the output.
+    pub outpoint: OutPoint,
+    /// Contents of the output.
+    pub tx_out: TxOut,
 }
 
 #[cfg(test)]
