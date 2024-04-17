@@ -30,7 +30,7 @@ fn main() -> anyhow::Result<()> {
     let private_key = bitcoin::PrivateKey::from_slice(&seed[..32], network).unwrap();
     let public_key = private_key.public_key(&Secp256k1::new());
 
-    let address = crate::utils::address_from_pubkey(&public_key, network, "p2tr").unwrap();
+    let address = utils::address_from_pubkey(&public_key, network, "p2tr").unwrap();
 
     println!("WIF: {}", private_key.to_wif());
     println!("Mnemonic: {}", mnemonic);

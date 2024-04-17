@@ -17,13 +17,13 @@ A library for working with Ordinal inscriptions.
 
 [![build-test](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml/badge.svg)](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml)
 
-## Get started
+## Get Started
 
 ## Examples
 
 ### Deploy
 
-You can see the example in `examples/deploy.rs` to see how to deploy a BRC20 token:
+To deploy a BRC20 token, check `examples/deploy.rs` to see how it is done:
 
 ```sh
 cargo run --example deploy --
@@ -37,7 +37,7 @@ cargo run --example deploy --
 
 ### Mint
 
-You can see the example in `examples/mint.rs` to see how to mint BRC20 tokens to your address.
+To mint an amount of BRC20 tokens to your address, check `examples/mint.rs` to see how it is done:
 
 ```sh
 cargo run --example mint --
@@ -50,7 +50,7 @@ cargo run --example mint --
 
 ### Transfer
 
-You can use the example in `examples/transfer.rs` to transfer BRC20 token to another address.
+You can use `examples/transfer.rs` to transfer BRC20 token to another address.
 
 To transfer tokens run the following command:
 
@@ -74,12 +74,12 @@ cargo run --example transfer --
   "b6d2f6ebbf791f58cf5c15ca7ef936dc5485b27360c5e10c55b0170cf7429468:1" "f9832ed4eaf8eb32f619fe0e24f6ab352a73c16ee456b03792f13c6329e6a1e4:1"
 ```
 
-Then you need to send the UTXO to the actual recipient of the transaction.
+After this, you need to send the UTXO to the actual recipient of the transaction.
 Let's say the previous command returned this output:
 
-`Reveal transaction broadcasted: a9d7b9b6062a3609e9526b46540c6702185e612a2936f6382bf3b910cdab5b8f`
+`Reveal transaction broadcasted: a9d7b9b6062a3609e9526b46540c6702185e612a2936f6382bf3b910cdab5b8f`.
 
-Then to send the transfer to the recipient, run the following command:
+To send the `transfer` inscription to the recipient, run the following command:
 
 ```sh
 cargo run --example send-inscription --
@@ -89,21 +89,21 @@ cargo run --example send-inscription --
   -i "a9d7b9b6062a3609e9526b46540c6702185e612a2936f6382bf3b910cdab5b8f:0" "0c86a1ba63234546c234a6e253a0844bb693d8093dc65a6cf28f200d475bd675:1"
 ```
 
-Where `-i` takes the reveal transaction and then, the positional arguments are the transactions which will fund the fees for the transaction.
+Where `-i` takes the reveal transaction ID, and the positional arguments are the transactions which will fund the fees for the transfer.
 
-#### How transfers works
+#### How Transfers Work
 
-The transfer involves two steps actually, let's see an example where Alice sends 100 ordi to Bob:
+The transfer involves two steps. Let's see an example where Alice sends 100 `ordi` to Bob:
 
-1. First the Alice sends a commit transaction from her **source** address to a random P2TR derived from her
-2. Then Alice reveals the inscription in the reveal transaction from the P2TR address to her **source** address.
+1. First, Alice sends a commit transaction from her **source** address to a random P2TR derived from her
+2. Then, Alice reveals the inscription in the reveal transaction from the P2TR address to her **source** address.
 3. Finally, Alice sends the UTXO from the reveal transaction to Bob's Address.
 
-### Inscription parsing
+### Inscription Parsing
 
-In order to parse an inscription you can use the `OrdParser::parse` function, which will use the `parse` function from the `Inscription` trait, for the given Inscription type.
+In order to parse an inscription you can use the `OrdParser::parse` function, which will use the `parse` function from the `Inscription` trait, for the given inscription type.
 
-For example, given the transaction `ff314aebaa91a3f10cfba576d3be958127aba982d29146735e612869567e7808` from the testnet, we'll parse a valid `Brc20`.
+For example, given the transaction ID `ff314aebaa91a3f10cfba576d3be958127aba982d29146735e612869567e7808` from the testnet, we'll parse a valid `Brc20` as thus:
 
 ```rust
 let transaction = get_transaction_by_id(
