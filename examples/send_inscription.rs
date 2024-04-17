@@ -30,6 +30,10 @@ struct Args {
     /// network
     network: String,
 
+    #[argh(option, short = 's', default = "String::from(\"p2tr\")")]
+    /// script type (p2tr, p2wsh)
+    script_type: String,
+
     #[argh(switch, short = 'd')]
     /// dry run, don't send any transaction
     dry_run: bool,
@@ -58,7 +62,9 @@ async fn main() -> anyhow::Result<()> {
     debug!("recipient: {recipient}");
     let private_key = PrivateKey::from_wif(&args.private_key)?;
     let public_key = private_key.public_key(&Secp256k1::new());
-    let sender_address = Address::p2wpkh(&public_key, network).unwrap();
+    let sender_address =
+        utils::address_from_pubkey(&public_key, network, &args.script_type.as_str())
+            .expect("Failed to derive a valid Bitcoin address from public key");
     debug!("sender address: {sender_address}");
 
     let inputs = rpc_client::sats_amount_from_tx_inputs(&inputs, network).await?;

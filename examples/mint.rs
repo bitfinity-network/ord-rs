@@ -2,7 +2,7 @@ mod utils;
 
 use argh::FromArgs;
 use bitcoin::secp256k1::Secp256k1;
-use bitcoin::{Address, Network, PrivateKey};
+use bitcoin::{Network, PrivateKey};
 use log::{debug, info};
 use ord_rs::wallet::{
     CreateCommitTransactionArgsV2, RevealTransactionArgs, SignCommitTransactionArgs,
@@ -61,7 +61,9 @@ async fn main() -> anyhow::Result<()> {
     let amount = args.amount;
     let private_key = PrivateKey::from_wif(&args.private_key)?;
     let public_key = private_key.public_key(&Secp256k1::new());
-    let sender_address = Address::p2wpkh(&public_key, network).unwrap();
+    let sender_address =
+        utils::address_from_pubkey(&public_key, network, &args.script_type.as_str())
+            .expect("Failed to derive a valid Bitcoin address from public key");
     debug!("sender address: {sender_address}");
 
     let Fees {
