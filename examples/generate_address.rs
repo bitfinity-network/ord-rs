@@ -1,5 +1,7 @@
+mod utils;
+
 use bitcoin::secp256k1::Secp256k1;
-use bitcoin::{Address, Network};
+use bitcoin::Network;
 use rand::Rng as _;
 
 fn main() -> anyhow::Result<()> {
@@ -28,7 +30,7 @@ fn main() -> anyhow::Result<()> {
     let private_key = bitcoin::PrivateKey::from_slice(&seed[..32], network).unwrap();
     let public_key = private_key.public_key(&Secp256k1::new());
 
-    let address = Address::p2wpkh(&public_key, network).unwrap();
+    let address = crate::utils::address_from_pubkey(&public_key, network, "p2tr").unwrap();
 
     println!("WIF: {}", private_key.to_wif());
     println!("Mnemonic: {}", mnemonic);

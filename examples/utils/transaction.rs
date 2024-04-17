@@ -9,7 +9,6 @@ use bitcoin::{
 use ord_rs::wallet::Utxo;
 use ord_rs::OrdError;
 
-#[allow(dead_code)]
 pub fn spend_utxo_transaction(
     private_key: &PrivateKey,
     recipient: Address,
