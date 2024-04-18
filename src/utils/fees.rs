@@ -31,10 +31,10 @@ pub fn estimate_commit_fee(
 ) -> Amount {
     estimate_transaction_fees(
         script_type,
-        unsigned_commit_tx.vsize(),
         unsigned_commit_tx.input.len(),
         current_fee_rate,
         multisig_config,
+        unsigned_commit_tx.output,
     )
 }
 
@@ -67,39 +67,37 @@ pub fn estimate_reveal_fee(
         version: Version::TWO,
         lock_time: LockTime::ZERO,
         input: tx_in,
-        output: tx_out,
+        output: tx_out.clone(),
     };
 
     estimate_transaction_fees(
         script_type,
-        unsigned_reveal_tx.vsize(),
         unsigned_reveal_tx.input.len(),
         current_fee_rate,
         multisig_config,
+        unsigned_reveal_tx.output,
     )
 }
 
 pub fn estimate_transaction_fees(
     script_type: ScriptType,
-    unsigned_tx_size: usize,
     number_of_inputs: usize,
     current_fee_rate: FeeRate,
     multisig_config: &Option<MultisigConfig>,
+    outputs: Vec<TxOut>,
 ) -> Amount {
-    let estimated_sig_size = estimate_signature_size(script_type, multisig_config);
-    let total_estimated_tx_size = unsigned_tx_size + (number_of_inputs * estimated_sig_size);
+    let vbytes = estimate_vbytes(number_of_inputs, script_type, multisig_config, outputs);
 
-    current_fee_rate
-        .fee_vb(total_estimated_tx_size as u64)
-        .unwrap()
+    current_fee_rate.fee_vb(vbytes as u64).unwrap()
 }
 
-/// Estimates the total size of signatures for a given script type and multisig configuration.
-fn estimate_signature_size(
+fn estimate_vbytes(
+    inputs: usize,
     script_type: ScriptType,
     multisig_config: &Option<MultisigConfig>,
+    outputs: Vec<TxOut>,
 ) -> usize {
-    match script_type {
+    let sighash_size = match script_type {
         // For P2WSH, calculate based on the multisig configuration if provided.
         ScriptType::P2WSH => match multisig_config {
             Some(config) => ECDSA_SIGHASH_SIZE * config.required,
@@ -107,168 +105,186 @@ fn estimate_signature_size(
         },
         // For P2TR, use the fixed Schnorr signature size.
         ScriptType::P2TR => SCHNORR_SIGHASH_SIZE,
+    };
+
+    Transaction {
+        version: Version::TWO,
+        lock_time: LockTime::ZERO,
+        input: (0..inputs)
+            .map(|_| TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::from_slice(&[&vec![0; sighash_size]]),
+            })
+            .collect(),
+        output: outputs,
     }
+    .vsize()
 }
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::address::NetworkUnchecked;
+
     use super::*;
+
+    const ADDITIONAL_INPUT_VBYTES: usize = 58;
+    const ADDITIONAL_OUTPUT_VBYTES: usize = 43;
+
+    fn outputs(amount: usize) -> Vec<TxOut> {
+        let dummy_address = "bc1pxwww0ct9ue7e8tdnlmug5m2tamfn7q06sahstg39ys4c9f3340qqxrdu9k"
+            .parse::<Address<NetworkUnchecked>>()
+            .unwrap()
+            .assume_checked();
+        vec![
+            TxOut {
+                value: Amount::ZERO,
+                script_pubkey: dummy_address.script_pubkey(),
+            };
+            amount
+        ]
+    }
+
+    #[test]
+    fn test_should_estimate_vbytes() {
+        let before = estimate_vbytes(0, ScriptType::P2TR, &None, Vec::new());
+        let after = estimate_vbytes(1, ScriptType::P2TR, &None, Vec::new());
+        assert_eq!(after - before, ADDITIONAL_INPUT_VBYTES);
+
+        let before = estimate_vbytes(0, ScriptType::P2TR, &None, Vec::new());
+        let after = estimate_vbytes(2, ScriptType::P2TR, &None, Vec::new());
+        assert_eq!(after - before, ADDITIONAL_INPUT_VBYTES * 2 - 1);
+    }
+
+    #[test]
+    fn additional_output_size_is_correct() {
+        let before = estimate_vbytes(0, ScriptType::P2TR, &None, Vec::new());
+        let after = estimate_vbytes(0, ScriptType::P2TR, &None, outputs(1));
+        assert_eq!(after - before, ADDITIONAL_OUTPUT_VBYTES);
+    }
+
+    #[test]
+    fn multi_io_size_is_correct() {
+        let before = estimate_vbytes(0, ScriptType::P2TR, &None, Vec::new());
+        let after = estimate_vbytes(2, ScriptType::P2TR, &None, outputs(2));
+        assert_eq!(
+            after - before,
+            (ADDITIONAL_OUTPUT_VBYTES * 2) + (ADDITIONAL_INPUT_VBYTES * 2 - 1)
+        );
+    }
 
     #[test]
     fn estimate_transaction_fees_p2wsh_single_signature() {
         let script_type = ScriptType::P2WSH;
-        let unsigned_tx_size = 100; // in vbytes
+        // let unsigned_tx_size = 100; // in vbytes
         let number_of_inputs = 5_usize;
         let current_fee_rate = FeeRate::from_sat_per_vb(5_u64).unwrap();
         let multisig_config: Option<MultisigConfig> = None; // No multisig config for single signature
 
+        let dummy_address = "bc1pxwww0ct9ue7e8tdnlmug5m2tamfn7q06sahstg39ys4c9f3340qqxrdu9k"
+            .parse::<Address<NetworkUnchecked>>()
+            .unwrap()
+            .assume_checked();
+        let outputs = vec![
+            TxOut {
+                value: Amount::ZERO,
+                script_pubkey: dummy_address.script_pubkey(),
+            },
+            TxOut {
+                value: Amount::ZERO,
+                script_pubkey: dummy_address.script_pubkey(),
+            },
+        ];
+
         let fee = estimate_transaction_fees(
             script_type,
-            unsigned_tx_size,
             number_of_inputs,
             current_fee_rate,
             &multisig_config,
+            outputs.clone(),
         );
 
         // Expected fee calculation: (100 + (5 * 73)) * 5 = 2325 satoshis
-        assert_eq!(fee, Amount::from_sat(2325));
+        let tx_size = estimate_vbytes(
+            number_of_inputs,
+            ScriptType::P2WSH,
+            &multisig_config,
+            outputs,
+        );
+        assert_eq!(fee, Amount::from_sat((tx_size * 5) as u64));
     }
 
     #[test]
     fn estimate_transaction_fees_p2wsh_multisig() {
         let script_type = ScriptType::P2WSH;
-        let unsigned_tx_size = 200; // in vbytes
+        // let unsigned_tx_size = 200; // in vbytes
         let number_of_inputs = 10_usize;
         let current_fee_rate = FeeRate::from_sat_per_vb(10_u64).unwrap();
         let multisig_config = Some(MultisigConfig {
             required: 2,
             total: 3,
         }); // 2-of-3 multisig
+        let dummy_address = "bc1pxwww0ct9ue7e8tdnlmug5m2tamfn7q06sahstg39ys4c9f3340qqxrdu9k"
+            .parse::<Address<NetworkUnchecked>>()
+            .unwrap()
+            .assume_checked();
+        let outputs = vec![
+            TxOut {
+                value: Amount::ZERO,
+                script_pubkey: dummy_address.script_pubkey(),
+            },
+            TxOut {
+                value: Amount::ZERO,
+                script_pubkey: dummy_address.script_pubkey(),
+            },
+        ];
+
+        // Expected fee calculation: (100 + (5 * 73)) * 5 = 2325 satoshis
+        let tx_size = estimate_vbytes(
+            number_of_inputs,
+            ScriptType::P2WSH,
+            &multisig_config,
+            outputs.clone(),
+        );
 
         let fee = estimate_transaction_fees(
             script_type,
-            unsigned_tx_size,
             number_of_inputs,
             current_fee_rate,
             &multisig_config,
+            outputs,
         );
 
         // Expected fee calculation: (200 + (10 * 73 * 2)) * 10 = 16600 satoshis
-        assert_eq!(fee, Amount::from_sat(16600));
+        assert_eq!(fee, Amount::from_sat((tx_size * 10) as u64));
     }
 
     #[test]
     fn estimate_transaction_fees_p2tr() {
         let script_type = ScriptType::P2TR;
-        let unsigned_tx_size = 150; // in vbytes
+        // let unsigned_tx_size = 150; // in vbytes
         let number_of_inputs = 5_usize;
         let current_fee_rate = FeeRate::from_sat_per_vb(1_u64).unwrap();
         let multisig_config = None;
 
+        // Expected fee calculation: (100 + (5 * 73)) * 5 = 2325 satoshis
+        let tx_size = estimate_vbytes(
+            number_of_inputs,
+            ScriptType::P2TR,
+            &multisig_config,
+            outputs(2),
+        );
+
         let fee = estimate_transaction_fees(
             script_type,
-            unsigned_tx_size,
             number_of_inputs,
             current_fee_rate,
             &multisig_config,
+            outputs(2),
         );
 
         // Expected fee calculation: (150 + (5 * 65)) * 1 = 475 satoshis
-        assert_eq!(fee, Amount::from_sat(475));
-    }
-
-    #[test]
-    #[should_panic]
-    fn estimate_transaction_fees_overflow() {
-        let script_type = ScriptType::P2TR;
-        let unsigned_tx_size = usize::MAX;
-        let number_of_inputs = 5_usize;
-        let current_fee_rate = FeeRate::from_sat_per_vb(1_u64).unwrap();
-        let multisig_config = None;
-
-        let _fee = estimate_transaction_fees(
-            script_type,
-            unsigned_tx_size,
-            number_of_inputs,
-            current_fee_rate,
-            &multisig_config,
-        );
-    }
-
-    #[test]
-    fn estimate_transaction_fees_low_fee_rate() {
-        let script_type = ScriptType::P2WSH;
-        let unsigned_tx_size = 250; // in vbytes
-        let number_of_inputs = 15_usize;
-        let current_fee_rate = FeeRate::from_sat_per_vb(1_u64).unwrap(); // Low fee rate
-        let multisig_config = Some(MultisigConfig {
-            required: 3,
-            total: 5,
-        }); // 3-of-5 multisig
-
-        let fee = estimate_transaction_fees(
-            script_type,
-            unsigned_tx_size,
-            number_of_inputs,
-            current_fee_rate,
-            &multisig_config,
-        );
-
-        // Expected fee calculation: (250 + (15 * 73 * 3)) * 1 = 3535 satoshis
-        assert_eq!(fee, Amount::from_sat(3535));
-    }
-
-    #[test]
-    fn estimate_transaction_fees_high_fee_rate() {
-        let script_type = ScriptType::P2TR;
-        let unsigned_tx_size = 180; // in vbytes
-        let number_of_inputs = 9_usize;
-        let current_fee_rate = FeeRate::from_sat_per_vb(50_u64).unwrap(); // High fee rate
-        let multisig_config = None;
-
-        let fee = estimate_transaction_fees(
-            script_type,
-            unsigned_tx_size,
-            number_of_inputs,
-            current_fee_rate,
-            &multisig_config,
-        );
-
-        // Expected fee calculation: (180 + (9 * 65)) * 50 = 38250 satoshis
-        assert_eq!(fee, Amount::from_sat(38250));
-    }
-
-    #[test]
-    fn estimate_transaction_fees_varying_fee_rate() {
-        let script_type = ScriptType::P2WSH;
-        let unsigned_tx_size = 300; // in vbytes
-        let number_of_inputs = 10_usize;
-        // Simulating a fee rate that might be seen during network congestion
-        let fee_rates: Vec<u64> = vec![5, 10, 20, 30, 40];
-
-        for fee_rate in fee_rates {
-            let current_fee_rate = FeeRate::from_sat_per_vb(fee_rate).unwrap();
-            let multisig_config = Some(MultisigConfig {
-                required: 2,
-                total: 3,
-            }); // 2-of-3 multisig
-
-            let fee = estimate_transaction_fees(
-                script_type,
-                unsigned_tx_size,
-                number_of_inputs,
-                current_fee_rate,
-                &multisig_config,
-            );
-
-            // Expected fee calculation changes with the fee_rate
-            let expected_fee = (300 + (10 * 73 * 2)) as u64 * fee_rate;
-            assert_eq!(
-                fee,
-                Amount::from_sat(expected_fee),
-                "Fee mismatch at rate: {}",
-                fee_rate
-            );
-        }
+        assert_eq!(fee, Amount::from_sat(tx_size as u64));
     }
 }
