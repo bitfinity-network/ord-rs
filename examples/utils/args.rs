@@ -51,11 +51,10 @@ mod tests {
 
     use super::*;
 
+    #[inline]
     fn get_public_key(network: Network) -> PublicKey {
         let entropy = rand::thread_rng().gen::<[u8; 16]>();
-        let mnemonic = bip39::Mnemonic::from_entropy(&entropy).unwrap();
-
-        let seed = mnemonic.to_seed("");
+        let seed = bip39::Mnemonic::from_entropy(&entropy).unwrap().to_seed("");
 
         let private_key = PrivateKey::from_slice(&seed[..32], network).unwrap();
         private_key.public_key(&Secp256k1::new())

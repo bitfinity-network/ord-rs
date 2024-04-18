@@ -51,7 +51,7 @@ impl Wallet {
         }
     }
 
-    pub async fn sign_commit_transaction(
+    pub async fn sign_commit_transaction_ecdsa(
         &mut self,
         own_pubkey: &PublicKey,
         inputs: &[Utxo],
@@ -66,6 +66,15 @@ impl Wallet {
             TransactionType::Commit,
         )
         .await
+    }
+
+    pub async fn sign_commit_transaction_schnorr(
+        &mut self,
+        _taproot: &TaprootPayload,
+        _redeem_script: &ScriptBuf,
+        _transaction: Transaction,
+    ) -> OrdResult<Transaction> {
+        todo!()
     }
 
     pub async fn sign_reveal_transaction_ecdsa(
@@ -127,7 +136,7 @@ impl Wallet {
         Ok(sighash_cache.into_transaction())
     }
 
-    fn sign_tr(
+    fn sign_tx(
         &self,
         prev_outs: &[&TxOut],
         index: usize,
@@ -204,7 +213,7 @@ impl Wallet {
                         None,
                     )?;
                 }
-                s if s.is_p2tr() => self.sign_tr(
+                s if s.is_p2tr() => self.sign_tx(
                     &prev_outs.iter().map(|v| &v.tx_out).collect::<Vec<_>>(),
                     index,
                     &mut cache,

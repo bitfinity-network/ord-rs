@@ -257,7 +257,7 @@ impl OrdTransactionBuilder {
     ) -> OrdResult<Transaction> {
         // sign transaction and update witness
         self.signer
-            .sign_commit_transaction(
+            .sign_commit_transaction_ecdsa(
                 &self.public_key,
                 &args.inputs,
                 unsigned_tx,
