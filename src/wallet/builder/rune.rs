@@ -109,10 +109,10 @@ impl OrdTransactionBuilder {
 
         let fee_amount = estimate_transaction_fees(
             ScriptType::P2TR,
-            unsigned_tx.vsize(),
             unsigned_tx.input.len(),
             args.fee_rate,
             &None,
+            unsigned_tx.output.clone(),
         );
         let change_amount = args
             .input_amount()
