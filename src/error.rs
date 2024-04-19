@@ -14,7 +14,7 @@ pub enum OrdError {
     #[error("Bad transaction input: {0}")]
     InputNotFound(usize),
     #[error("Insufficient balance")]
-    InsufficientBalance,
+    InsufficientBalance { required: u64, available: u64 },
     #[error("Invalid signature: {0}")]
     Signature(#[from] bitcoin::secp256k1::Error),
     #[error("Failed to convert slice to public key: {0}")]

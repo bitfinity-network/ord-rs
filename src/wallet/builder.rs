@@ -16,6 +16,8 @@ use crate::{OrdError, OrdResult};
 
 #[cfg(feature = "rune")]
 mod rune;
+#[cfg(feature = "rune")]
+pub use rune::CreateEdictTxArgs;
 
 pub mod signer;
 mod taproot;
@@ -218,15 +220,19 @@ impl OrdTransactionBuilder {
 
         // calc balance
         // exceeding amount of transaction to send to leftovers recipient
-        leftover_amount = args
+        let input_amount = args
             .inputs
             .iter()
             .map(|input| input.amount.to_sat())
-            .sum::<u64>()
+            .sum::<u64>();
+        leftover_amount = input_amount
             .checked_sub(POSTAGE)
             .and_then(|v| v.checked_sub(commit_fee.to_sat()))
             .and_then(|v| v.checked_sub(reveal_fee.to_sat()))
-            .ok_or(OrdError::InsufficientBalance)?;
+            .ok_or(OrdError::InsufficientBalance {
+                available: input_amount,
+                required: POSTAGE + commit_fee.to_sat() + reveal_fee.to_sat(),
+            })?;
         debug!("leftover_amount: {leftover_amount}");
 
         tx_out[1].value = Amount::from_sat(leftover_amount);
@@ -387,15 +393,19 @@ impl OrdTransactionBuilder {
 
         // calc balance
         // exceeding amount of transaction to send to leftovers recipient
-        let leftover_amount = args
+        let input_amount = args
             .inputs
             .iter()
             .map(|input| input.amount.to_sat())
-            .sum::<u64>()
+            .sum::<u64>();
+        let leftover_amount = input_amount
             .checked_sub(POSTAGE)
             .and_then(|v| v.checked_sub(args.commit_fee.to_sat()))
             .and_then(|v| v.checked_sub(args.reveal_fee.to_sat()))
-            .ok_or(OrdError::InsufficientBalance)?;
+            .ok_or(OrdError::InsufficientBalance {
+                available: input_amount,
+                required: POSTAGE + args.commit_fee.to_sat() + args.reveal_fee.to_sat(),
+            })?;
         debug!("leftover_amount: {leftover_amount}");
 
         let reveal_balance = POSTAGE + args.reveal_fee.to_sat();
@@ -500,6 +510,7 @@ pub struct Utxo {
 ///
 /// This struct contains signature script in contrast to [Utxo] so it can be used to sign inputs
 /// from different addresses.
+#[derive(Debug, Clone)]
 pub struct TxInputInfo {
     /// ID of the output.
     pub outpoint: OutPoint,

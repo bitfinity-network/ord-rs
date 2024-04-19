@@ -16,19 +16,19 @@ pub const RUNE_POSTAGE: Amount = Amount::from_sat(10_000);
 /// Arguments for the [`OrdTransactionBuilder::create_edict_transaction`] method.
 pub struct CreateEdictTxArgs {
     /// Identifier of the rune to be transferred.
-    rune: RuneId,
+    pub rune: RuneId,
     /// Inputs that contain rune and funding BTC balances.
-    inputs: Vec<TxInputInfo>,
+    pub inputs: Vec<TxInputInfo>,
     /// Address of the recipient of the rune transfer.
-    destination: Address,
+    pub destination: Address,
     /// Address that will receive leftovers of BTC.
-    change_address: Address,
+    pub change_address: Address,
     /// Address that will receive leftovers of runes.
-    rune_change_address: Address,
+    pub rune_change_address: Address,
     /// Amount of the rune to be transferred.
-    amount: u128,
+    pub amount: u128,
     /// Current BTC fee rate.
-    fee_rate: FeeRate,
+    pub fee_rate: FeeRate,
 }
 
 impl CreateEdictTxArgs {
@@ -117,7 +117,10 @@ impl OrdTransactionBuilder {
         let change_amount = args
             .input_amount()
             .checked_sub(fee_amount + RUNE_POSTAGE * 2)
-            .ok_or(OrdError::InsufficientBalance)?;
+            .ok_or(OrdError::InsufficientBalance {
+                required: (fee_amount + RUNE_POSTAGE * 2).to_sat(),
+                available: args.input_amount().to_sat(),
+            })?;
 
         unsigned_tx.output[3].value = change_amount;
 
