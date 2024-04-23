@@ -286,9 +286,13 @@ impl Wallet {
                 let signature = Signature::from_compact(&hex::decode(&sig_hex)?)?;
 
                 // verify
-                signer
+                if !signer
                     .verify_ecdsa(&sig_hex, &msg_hex, &own_pubkey.to_string())
-                    .await;
+                    .await
+                {
+                    return Err(OrdError::UnexpectedSignature);
+                }
+
                 signature
             }
             WalletType::Local { private_key } => {
