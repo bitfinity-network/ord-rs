@@ -1,6 +1,7 @@
 mod utils;
 
-use crate::utils::Fees;
+use std::str::FromStr;
+
 use argh::FromArgs;
 use bitcoin::consensus::Encodable;
 use bitcoin::secp256k1::Secp256k1;
@@ -9,7 +10,8 @@ use log::debug;
 use ord_rs::wallet::{CreateEdictTxArgs, ScriptType, TxInputInfo};
 use ord_rs::{OrdTransactionBuilder, Wallet, WalletType};
 use ordinals::RuneId;
-use std::str::FromStr;
+
+use crate::utils::Fees;
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "Create and sign edict transaction")]

@@ -9,5 +9,4 @@ pub use builder::{
     OrdTransactionBuilder, RedeemScriptPubkey, RevealTransactionArgs, ScriptType,
     SignCommitTransactionArgs, TxInputInfo, Utxo,
 };
-
 pub use parser::OrdParser;

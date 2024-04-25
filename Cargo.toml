@@ -65,3 +65,8 @@ path = "examples/send_inscription.rs"
 [[example]]
 name = "print-script"
 path = "examples/print_script.rs"
+
+[[example]]
+name = "edict"
+path = "examples/edict.rs"
+required-features = ["rune"]
