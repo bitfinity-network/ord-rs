@@ -1,8 +1,9 @@
 //! NFT
+//! Taken from https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs and
 
 pub mod id;
 #[cfg(test)]
-mod nft_tests;
+pub mod nft_tests;
 
 use std::io::Cursor;
 use std::str::FromStr;
@@ -66,44 +67,6 @@ pub struct Nft {
     /// Has a tag of 11, representing a nominated NFT. Used to delegate certain rights or
     /// attributes from one NFT to another, effectively linking them in a specified relationship.
     pub delegate: Option<Vec<u8>>,
-}
-
-impl Inscription for Nft {
-    fn generate_redeem_script(
-        &self,
-        builder: ScriptBuilder,
-        pubkey: RedeemScriptPubkey,
-    ) -> OrdResult<ScriptBuilder> {
-        let encoded_pubkey = pubkey.encode()?;
-
-        let builder = builder
-            .push_slice(encoded_pubkey.as_push_bytes())
-            .push_opcode(OP_CHECKSIG);
-
-        self.append_reveal_script_to_builder(builder)
-    }
-
-    fn content_type(&self) -> String {
-        match self.content_type() {
-            Some(t) => t.to_string(),
-            None => "".to_string(),
-        }
-    }
-
-    fn data(&self) -> OrdResult<PushBytesBuf> {
-        bytes_to_push_bytes(self.encode()?.as_bytes())
-    }
-
-    fn parse(data: &[u8]) -> OrdResult<Self>
-    where
-        Self: Sized,
-    {
-        let s = String::from_utf8(data.to_vec())
-            .map_err(|_| OrdError::InscriptionParser(InscriptionParseError::BadDataSyntax))?;
-        let inscription = serde_json::from_str(&s).map_err(OrdError::from)?;
-
-        Ok(inscription)
-    }
 }
 
 impl Nft {
@@ -206,10 +169,6 @@ impl Nft {
         std::str::from_utf8(self.body.as_ref()?).ok()
     }
 
-    pub fn content_length(&self) -> Option<usize> {
-        Some(self.body()?.len())
-    }
-
     pub fn content_type(&self) -> Option<&str> {
         std::str::from_utf8(self.content_type.as_ref()?).ok()
     }
@@ -225,20 +184,6 @@ impl Nft {
         ciborium::from_reader(Cursor::new(self.metadata.as_ref()?)).ok()
     }
 
-    pub fn metaprotocol(&self) -> Option<&str> {
-        std::str::from_utf8(self.metaprotocol.as_ref()?).ok()
-    }
-
-    pub fn pointer_value(pointer: u64) -> Vec<u8> {
-        let mut bytes = pointer.to_le_bytes().to_vec();
-
-        while bytes.last().copied() == Some(0) {
-            bytes.pop();
-        }
-
-        bytes
-    }
-
     pub fn reveal_script_as_scriptbuf(&self, builder: ScriptBuilder) -> OrdResult<ScriptBuf> {
         Ok(self.append_reveal_script_to_builder(builder)?.into_script())
     }
@@ -249,6 +194,40 @@ impl FromStr for Nft {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         serde_json::from_str(s).map_err(OrdError::from)
+    }
+}
+
+impl Inscription for Nft {
+    fn generate_redeem_script(
+        &self,
+        builder: ScriptBuilder,
+        pubkey: RedeemScriptPubkey,
+    ) -> OrdResult<ScriptBuilder> {
+        let encoded_pubkey = pubkey.encode()?;
+
+        let builder = builder
+            .push_slice(encoded_pubkey.as_push_bytes())
+            .push_opcode(OP_CHECKSIG);
+
+        self.append_reveal_script_to_builder(builder)
+    }
+
+    fn content_type(&self) -> String {
+        match self.content_type() {
+            Some(t) => t.to_string(),
+            None => "".to_string(),
+        }
+    }
+
+    fn data(&self) -> OrdResult<PushBytesBuf> {
+        bytes_to_push_bytes(self.encode()?.as_bytes())
+    }
+
+    fn parse(data: &[u8]) -> OrdResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(serde_json::from_slice(data).map_err(|_| InscriptionParseError::BadDataSyntax)?)
     }
 }
 

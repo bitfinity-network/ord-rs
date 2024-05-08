@@ -106,11 +106,7 @@ impl Inscription for Brc20 {
     where
         Self: Sized,
     {
-        let s = String::from_utf8(data.to_vec())
-            .map_err(|_| OrdError::InscriptionParser(InscriptionParseError::BadDataSyntax))?;
-        let inscription = serde_json::from_str(&s).map_err(OrdError::from)?;
-
-        Ok(inscription)
+        Ok(serde_json::from_slice(data).map_err(|_| InscriptionParseError::BadDataSyntax)?)
     }
 }
 

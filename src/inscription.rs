@@ -1,5 +1,6 @@
 pub mod brc20;
 pub mod nft;
+pub mod parser;
 
 use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use serde::de::DeserializeOwned;
