@@ -15,7 +15,6 @@ use bitcoin::opcodes::all::OP_CHECKSIG;
 use bitcoin::script::{Builder as ScriptBuilder, PushBytes, PushBytesBuf, ScriptBuf};
 use http::HeaderValue;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 
 use crate::utils::constants;
 use crate::utils::push_bytes::bytes_to_push_bytes;
@@ -31,7 +30,6 @@ use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
 /// a tag and a value.
 ///
 /// [Reference](https://docs.ordinals.com/inscriptions.html#fields)
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Nft {
     /// The main body of the NFT. This is the core data or content of the NFT,

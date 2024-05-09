@@ -60,4 +60,6 @@ pub enum InscriptionParseError {
     CharacterSeparator(char),
     #[error("invalid index: {0}")]
     Index(#[from] std::num::ParseIntError),
+    #[error("content of envelope: {0}")]
+    ParsedEnvelope(String),
 }
