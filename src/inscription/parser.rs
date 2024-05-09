@@ -93,9 +93,8 @@ impl InscriptionParser {
     /// }
     ///
     /// let ordinal_data = create_nft("text/plain", "Hello, world!").encode().unwrap();
-    /// let ordinal_data = ordinal_data.as_bytes().to_vec();
     ///
-    /// let inscriptions = vec![ordinal_data, brc20_data.to_vec()];
+    /// let inscriptions = vec![ordinal_data.as_bytes().to_vec(), brc20_data.to_vec()];
     ///
     /// assert!(matches!(InscriptionParser::inscription_types(inscriptions.clone()).unwrap()[0], InscriptionParser::Ordinal(_)));
     /// assert!(matches!(InscriptionParser::inscription_types(inscriptions).unwrap()[1], InscriptionParser::Brc20(_)));
@@ -153,16 +152,6 @@ impl Inscription for InscriptionParser {
         }
     }
 
-    fn encode(&self) -> OrdResult<String>
-    where
-        Self: Serialize,
-    {
-        match self {
-            Self::Brc20(inscription) => inscription.encode(),
-            Self::Ordinal(inscription) => inscription.encode(),
-        }
-    }
-
     fn generate_redeem_script(
         &self,
         builder: ScriptBuilder,
@@ -172,13 +161,6 @@ impl Inscription for InscriptionParser {
             Self::Brc20(inscription) => inscription.generate_redeem_script(builder, pubkey),
             Self::Ordinal(inscription) => inscription.generate_redeem_script(builder, pubkey),
         }
-    }
-
-    fn parse(_data: &[u8]) -> OrdResult<Self>
-    where
-        Self: Sized,
-    {
-        unimplemented!()
     }
 }
 

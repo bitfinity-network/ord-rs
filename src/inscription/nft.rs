@@ -1,5 +1,5 @@
 //! NFT
-//! Taken from https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs
+//! Closely follows https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs
 
 pub mod id;
 #[cfg(test)]
@@ -13,7 +13,6 @@ use bitcoin::constants::MAX_SCRIPT_ELEMENT_SIZE;
 use bitcoin::opcodes;
 use bitcoin::opcodes::all::OP_CHECKSIG;
 use bitcoin::script::{Builder as ScriptBuilder, PushBytes, PushBytesBuf, ScriptBuf};
-use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::constants;
@@ -79,22 +78,6 @@ impl Nft {
             body,
             ..Default::default()
         }
-    }
-
-    /// Validates the NFT's content type.
-    pub fn validate_content_type(&self) -> OrdResult<Self> {
-        if let Some(content_type) = &self.content_type {
-            let content_type_str =
-                std::str::from_utf8(content_type).map_err(OrdError::Utf8Encoding)?;
-
-            if !content_type_str.contains('/') {
-                return Err(OrdError::InscriptionParser(
-                    InscriptionParseError::ContentType,
-                ));
-            }
-        }
-
-        Ok(self.clone())
     }
 
     pub fn append_reveal_script_to_builder(
@@ -171,6 +154,22 @@ impl Nft {
         mem::swap(&mut tmp, builder);
     }
 
+    /// Validates the NFT's content type.
+    fn validate_content_type(&self) -> OrdResult<Self> {
+        if let Some(content_type) = &self.content_type {
+            let content_type_str =
+                std::str::from_utf8(content_type).map_err(OrdError::Utf8Encoding)?;
+
+            if !content_type_str.contains('/') {
+                return Err(OrdError::InscriptionParser(
+                    InscriptionParseError::ContentType,
+                ));
+            }
+        }
+
+        Ok(self.clone())
+    }
+
     /// Creates a new `Nft` from JSON-encoded string.
     pub fn from_json_str(data: &str) -> OrdResult<Self> {
         Self::from_str(data)?.validate_content_type()
@@ -181,23 +180,12 @@ impl Nft {
         bytes_to_push_bytes(self.encode()?.as_bytes())
     }
 
-    pub fn body(&self) -> Option<&[u8]> {
-        Some(self.body.as_ref()?)
-    }
-
-    pub fn body_str(&self) -> Option<&str> {
+    pub fn body(&self) -> Option<&str> {
         std::str::from_utf8(self.body.as_ref()?).ok()
     }
 
     pub fn content_type(&self) -> Option<&str> {
         std::str::from_utf8(self.content_type.as_ref()?).ok()
-    }
-
-    pub fn content_encoding(&self) -> Option<HeaderValue> {
-        HeaderValue::from_str(
-            std::str::from_utf8(self.content_encoding.as_ref()?).unwrap_or_default(),
-        )
-        .ok()
     }
 
     pub fn metadata(&self) -> Option<ciborium::Value> {
@@ -242,13 +230,6 @@ impl Inscription for Nft {
     fn data(&self) -> OrdResult<PushBytesBuf> {
         bytes_to_push_bytes(self.encode()?.as_bytes())
     }
-
-    fn parse(data: &[u8]) -> OrdResult<Self>
-    where
-        Self: Sized,
-    {
-        Ok(serde_json::from_slice(data).map_err(|_| InscriptionParseError::BadDataSyntax)?)
-    }
 }
 
 fn is_chunked(tag: [u8; 1]) -> bool {
@@ -266,7 +247,7 @@ mod tests {
         let nft = create_nft("text/plain", "Hello, world!");
 
         assert_eq!(nft.content_type(), Some("text/plain"));
-        assert_eq!(nft.body_str(), Some("Hello, world!"));
+        assert_eq!(nft.body(), Some("Hello, world!"));
         assert!(nft.metadata().is_none());
     }
 
@@ -292,7 +273,7 @@ mod tests {
         let invalid_utf8 = vec![0xff, 0xfe, 0xfd];
         let nft = create_nft("text/plain", invalid_utf8);
 
-        assert!(nft.body_str().is_none());
+        assert!(nft.body().is_none());
         assert!(nft.metadata().is_none());
         assert!(nft.content_type().is_some());
     }

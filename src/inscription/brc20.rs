@@ -17,7 +17,7 @@ use serde_with::{serde_as, DisplayFromStr};
 
 use crate::utils::push_bytes::bytes_to_push_bytes;
 use crate::wallet::RedeemScriptPubkey;
-use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
+use crate::{Inscription, OrdError, OrdResult};
 
 const PROTOCOL: &str = "brc-20";
 
@@ -117,13 +117,6 @@ impl Inscription for Brc20 {
 
     fn data(&self) -> OrdResult<PushBytesBuf> {
         bytes_to_push_bytes(self.encode()?.as_bytes())
-    }
-
-    fn parse(data: &[u8]) -> OrdResult<Self>
-    where
-        Self: Sized,
-    {
-        Ok(serde_json::from_slice(data).map_err(|_| InscriptionParseError::BadDataSyntax)?)
     }
 }
 

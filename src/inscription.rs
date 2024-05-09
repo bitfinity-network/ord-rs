@@ -77,5 +77,8 @@ pub trait Inscription: DeserializeOwned {
     /// May return an `OrdError` if parsing fails.
     fn parse(data: &[u8]) -> OrdResult<Self>
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        serde_json::from_slice(data).map_err(OrdError::Codec)
+    }
 }
