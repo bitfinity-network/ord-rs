@@ -25,7 +25,7 @@ pub enum InscriptionParser {
 }
 
 impl InscriptionParser {
-    /// Parses all inscriptions from a given transaction and categorizes them as either Ordinal(NFT) or BRC20.
+    /// Parses all inscriptions from a given transaction and categorizes them as either `Self::Brc20` or `Self::Ordinal`.
     ///
     /// This function extracts all inscription data from the transaction, attempts to parse each inscription,
     /// and returns a vector of categorized inscriptions.
@@ -39,13 +39,13 @@ impl InscriptionParser {
             .into_iter()
             .map(|envelope| envelope.payload.body.unwrap_or_default())
             .collect::<Vec<_>>();
-        Self::inscription_types(data)
+        Self::from_raw(data)
     }
 
     /// Parses a single inscription from a transaction at a specified index.
     ///
     /// This method specifically targets one inscription identified by its index within the transaction's inputs.
-    /// It extracts the inscription data, attempts to parse it, and categorizes it as either an Ordinal(NFT) or a BRC20.
+    /// It extracts the inscription data, attempts to parse it, and categorizes it as either `Self::Brc20` or `Self::Ordinal`.
     ///
     /// # Errors
     ///
@@ -66,62 +66,37 @@ impl InscriptionParser {
                 ))
             })?;
 
-        Self::inscription_types(vec![data])
+        Self::from_raw(vec![data])
             .map(|mut all| all.pop().expect("Expected at least one inscription"))
     }
 
-    /// Takes a list of inscription data and attempts to parse
-    /// to determine if they're an Ordinal or a BRC20.
+    /// Takes a list of inscription data, attempts to parse them, and
+    /// categorize each of them as either `Self::Brc20` or `Self::Ordinal`.
     ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ord_rs::{InscriptionParser, Brc20, Nft, Inscription};
-    ///
-    /// let brc20_data = br#"{
-    ///     "p": "brc-20",
-    ///     "op": "deploy",
-    ///     "tick": "ordi",
-    ///     "max": "21000000",
-    ///     "lim": "1000",
-    ///     "dec": "8",
-    ///     "self_mint": "false"
-    /// }"#;
-    ///
-    /// fn create_nft(content_type: &str, body: impl AsRef<[u8]>) -> Nft {
-    ///     Nft::new(Some(content_type.into()), Some(body.as_ref().into()))
-    /// }
-    ///
-    /// let ordinal_data = create_nft("text/plain", "Hello, world!").encode().unwrap();
-    ///
-    /// let inscriptions = vec![ordinal_data.as_bytes().to_vec(), brc20_data.to_vec()];
-    ///
-    /// assert!(matches!(InscriptionParser::inscription_types(inscriptions.clone()).unwrap()[0], InscriptionParser::Ordinal(_)));
-    /// assert!(matches!(InscriptionParser::inscription_types(inscriptions).unwrap()[1], InscriptionParser::Brc20(_)));
-    /// ```
-    pub fn inscription_types(data: Vec<Vec<u8>>) -> OrdResult<Vec<Self>> {
-        data.into_iter()
-            .map(|inscription| {
-                let result: Result<Value, serde_json::Error> = serde_json::from_slice(&inscription);
-                match result {
-                    Ok(value) => {
-                        if value.get("p").is_some()
-                            && value.get("op").is_some()
-                            && value.get("tick").is_some()
-                        {
-                            let brc20: Brc20 =
-                                serde_json::from_value(value).map_err(OrdError::Codec)?;
-                            Ok(Self::Brc20(brc20))
-                        } else {
-                            let nft: Nft =
-                                serde_json::from_value(value).map_err(OrdError::Codec)?;
-                            Ok(Self::Ordinal(nft))
-                        }
-                    }
-                    Err(err) => Err(OrdError::Codec(err)),
-                }
-            })
+    /// Returns a list of parsed inscription data, or an error if deserialization fails.
+    fn from_raw(raw_inscriptions: Vec<Vec<u8>>) -> OrdResult<Vec<Self>> {
+        raw_inscriptions
+            .into_iter()
+            .map(|inscription| Self::categorize(&inscription))
             .collect()
+    }
+
+    fn categorize(raw_inscription: &[u8]) -> OrdResult<Self> {
+        match serde_json::from_slice::<Value>(raw_inscription) {
+            Ok(value) => {
+                if value.get("p").is_some()
+                    && value.get("op").is_some()
+                    && value.get("tick").is_some()
+                {
+                    let brc20: Brc20 = serde_json::from_value(value).map_err(OrdError::Codec)?;
+                    Ok(Self::Brc20(brc20))
+                } else {
+                    let nft: Nft = serde_json::from_value(value).map_err(OrdError::Codec)?;
+                    Ok(Self::Ordinal(nft))
+                }
+            }
+            Err(err) => Err(OrdError::Codec(err)),
+        }
     }
 }
 
@@ -134,6 +109,18 @@ impl From<Brc20> for InscriptionParser {
 impl From<Nft> for InscriptionParser {
     fn from(inscription: Nft) -> Self {
         Self::Ordinal(inscription)
+    }
+}
+
+impl From<InscriptionParser> for Nft {
+    fn from(parser: InscriptionParser) -> Self {
+        parser.into()
+    }
+}
+
+impl From<InscriptionParser> for Brc20 {
+    fn from(parser: InscriptionParser) -> Self {
+        parser.into()
     }
 }
 
@@ -462,14 +449,15 @@ fn remove_array(fields: &mut BTreeMap<&[u8], Vec<&[u8]>>, tag: [u8; 1]) -> Vec<V
 #[cfg(test)]
 mod tests {
     use bitcoin::absolute::LockTime;
-    use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
+    use bitcoin::script::{Builder as ScriptBuilder, PushBytes, PushBytesBuf};
     use bitcoin::transaction::Version;
     use bitcoin::{OutPoint, ScriptBuf, Sequence, TxIn, Witness};
 
     use super::*;
     use crate::inscription::nft::nft_tests::create_nft;
+    use crate::utils::test_utils::get_transaction_by_id;
 
-    fn envelope(payload: &[&[u8]]) -> Witness {
+    fn witness_from_script(payload: &[&[u8]]) -> Witness {
         let mut builder = ScriptBuilder::new()
             .push_opcode(opcodes::OP_FALSE)
             .push_opcode(opcodes::all::OP_IF);
@@ -485,7 +473,7 @@ mod tests {
         Witness::from_slice(&[script.into_bytes(), Vec::new()])
     }
 
-    fn parse(witnesses: &[Witness]) -> Vec<ParsedEnvelope> {
+    fn parsed_envelope(witnesses: &[Witness]) -> Vec<ParsedEnvelope> {
         ParsedEnvelope::from_transaction(&Transaction {
             version: Version::ONE,
             lock_time: LockTime::ZERO,
@@ -502,16 +490,231 @@ mod tests {
         })
     }
 
-    #[test]
-    fn empty_witness() {
-        assert_eq!(parse(&[Witness::new()]), Vec::new())
+    #[tokio::test]
+    async fn ord_parser_should_parse_testnet_brc20_p2tr() {
+        let transaction = get_transaction_by_id(
+            "ff314aebaa91a3f10cfba576d3be958127aba982d29146735e612869567e7808",
+            bitcoin::Network::Testnet,
+        )
+        .await
+        .unwrap();
+
+        let parsed_brc20: Brc20 = InscriptionParser::parse_all(&transaction).unwrap()[0]
+            .clone()
+            .into();
+        assert_eq!(parsed_brc20, Brc20::transfer("mona", 100));
+    }
+
+    #[tokio::test]
+    async fn ord_parser_should_parse_testnet_brc20_p2wsh() {
+        let transaction = get_transaction_by_id(
+            "c769750df54ee38fe2bae876dbf1632c779c3af780958a19cee1ca0497c78e80",
+            bitcoin::Network::Testnet,
+        )
+        .await
+        .unwrap();
+
+        let parsed_brc20: Brc20 = InscriptionParser::parse_all(&transaction).unwrap()[0]
+            .clone()
+            .into();
+        assert_eq!(parsed_brc20, Brc20::transfer("mona", 100));
+    }
+
+    #[tokio::test]
+    async fn ord_parser_should_not_parse_a_non_brc20_inscription() {
+        let transaction = get_transaction_by_id(
+            "37777defed8717c581b4c0509329550e344bdc14ac38f71fc050096887e535c8",
+            bitcoin::Network::Bitcoin,
+        )
+        .await
+        .unwrap();
+
+        let parse_result: OrdResult<Vec<InscriptionParser>> =
+            InscriptionParser::parse_all(&transaction);
+        assert!(parse_result.is_err());
     }
 
     #[test]
-    fn parse_from_tapscript() {
+    fn ord_parser_should_return_a_valid_brc20_from_raw_transaction_data() {
+        let kobp_brc20 = br#"{
+            "p": "brc-20",
+            "op": "deploy",
+            "tick": "kobp",
+            "max": "1000",
+            "lim": "10",
+            "dec": "8",
+            "self_mint": "true"
+        }"#;
+
+        let script = ScriptBuilder::new()
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(kobp_brc20.as_slice().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script();
+
+        let witnesses = &[Witness::from_slice(&[script.into_bytes(), Vec::new()])];
+
+        let transaction = Transaction {
+            version: Version::ONE,
+            lock_time: LockTime::ZERO,
+            input: witnesses
+                .iter()
+                .map(|witness| TxIn {
+                    previous_output: OutPoint::null(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: witness.clone(),
+                })
+                .collect(),
+            output: Vec::new(),
+        };
+
+        let parse_result = InscriptionParser::parse_all(&transaction);
+        assert!(parse_result.is_ok());
+        let parse_result = parse_result.unwrap();
+
+        let parsed_kobp_brc20: Brc20 = parse_result[0].clone().into();
+
         assert_eq!(
-            parse(&[Witness::from_slice(&[
-                bitcoin::script::Builder::new()
+            parsed_kobp_brc20,
+            Brc20::deploy("kobp", 1000, Some(10), Some(8), Some(true))
+        );
+    }
+
+    #[test]
+    fn ord_parser_should_parse_different_valid_inscription_types_from_raw_bytes() {
+        let brc20_data = br#"{
+            "p": "brc-20",
+            "op": "deploy",
+            "tick": "ordi",
+            "max": "21000000",
+            "lim": "1000",
+            "dec": "8",
+            "self_mint": "false"
+        }"#;
+
+        let ordinal_data = create_nft("text/plain", "Hello, world!").encode().unwrap();
+
+        let inscriptions = vec![ordinal_data.as_bytes().to_vec(), brc20_data.to_vec()];
+
+        assert!(matches!(
+            InscriptionParser::from_raw(inscriptions.clone()).unwrap()[0],
+            InscriptionParser::Ordinal(_)
+        ));
+        assert!(matches!(
+            InscriptionParser::from_raw(inscriptions).unwrap()[1],
+            InscriptionParser::Brc20(_)
+        ));
+    }
+
+    #[test]
+    fn envelope_should_parse_a_valid_brc20() {
+        let brc20_data = br#"{
+            "p": "brc-20",
+            "op": "deploy",
+            "tick": "ordi",
+            "max": "21000000",
+            "lim": "1000",
+            "dec": "8",
+            "self_mint": "false"
+        }"#;
+
+        let script = ScriptBuilder::new()
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(brc20_data.as_slice().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script();
+
+        let parsed_envelope =
+            parsed_envelope(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]);
+        let parsed_brc20: Brc20 =
+            serde_json::from_slice(parsed_envelope[0].payload.body.as_ref().unwrap()).unwrap();
+
+        let brc20 = Brc20::deploy("ordi", 21000000, Some(1000), Some(8), Some(false));
+
+        assert_eq!(parsed_brc20, brc20);
+    }
+
+    #[test]
+    fn envelope_should_parse_multiple_valid_brc20s() {
+        let ordi_brc20 = br#"{
+            "p": "brc-20",
+            "op": "deploy",
+            "tick": "ordi",
+            "max": "21000000",
+            "lim": "1000",
+            "dec": "8",
+            "self_mint": "false"
+        }"#;
+
+        let kobp_brc20 = br#"{
+            "p": "brc-20",
+            "op": "deploy",
+            "tick": "kobp",
+            "max": "1000",
+            "lim": "10",
+            "dec": "8",
+            "self_mint": "true"
+        }"#;
+
+        let script = ScriptBuilder::new()
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(ordi_brc20.as_slice().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(kobp_brc20.as_slice().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script();
+
+        let parsed_envelopes =
+            parsed_envelope(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]);
+        assert_eq!(parsed_envelopes.len(), 2);
+
+        let parsed_ordi_brc20: Brc20 =
+            serde_json::from_slice(parsed_envelopes[0].payload.body.as_ref().unwrap()).unwrap();
+        let parsed_kobp_brc20: Brc20 =
+            serde_json::from_slice(parsed_envelopes[1].payload.body.as_ref().unwrap()).unwrap();
+
+        assert_eq!(
+            parsed_ordi_brc20,
+            Brc20::deploy("ordi", 21000000, Some(1000), Some(8), Some(false))
+        );
+        assert_eq!(
+            parsed_kobp_brc20,
+            Brc20::deploy("kobp", 1000, Some(10), Some(8), Some(true))
+        );
+    }
+
+    #[test]
+    fn envelope_should_parse_an_empty_witness() {
+        assert_eq!(parsed_envelope(&[Witness::new()]), Vec::new())
+    }
+
+    #[test]
+    fn envelope_should_parse_witness_from_tapscript() {
+        assert_eq!(
+            parsed_envelope(&[Witness::from_slice(&[
+                ScriptBuilder::new()
                     .push_opcode(opcodes::OP_FALSE)
                     .push_opcode(opcodes::all::OP_IF)
                     .push_slice(b"ord")
@@ -527,9 +730,9 @@ mod tests {
     }
 
     #[test]
-    fn no_inscription() {
+    fn envelope_should_parse_witness_with_no_inscription() {
         assert_eq!(
-            parse(&[Witness::from_slice(&[
+            parsed_envelope(&[Witness::from_slice(&[
                 ScriptBuf::new().into_bytes(),
                 Vec::new()
             ])]),
@@ -538,9 +741,9 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_field() {
+    fn envelope_should_detect_duplicate_field_in_an_nft() {
         assert_eq!(
-            parse(&[envelope(&[b"ord", &[255], &[], &[255], &[]])]),
+            parsed_envelope(&[witness_from_script(&[b"ord", &[255], &[], &[255], &[]])]),
             vec![ParsedEnvelope {
                 payload: Nft {
                     duplicate_field: true,
@@ -552,9 +755,9 @@ mod tests {
     }
 
     #[test]
-    fn with_content_type() {
+    fn envelope_should_parse_a_valid_nft_with_a_content_type() {
         assert_eq!(
-            parse(&[envelope(&[
+            parsed_envelope(&[witness_from_script(&[
                 b"ord",
                 &[1],
                 b"text/plain;charset=utf-8",
@@ -569,23 +772,9 @@ mod tests {
     }
 
     #[test]
-    fn no_body() {
+    fn envelope_should_parse_a_valid_nft_with_no_content_type() {
         assert_eq!(
-            parse(&[envelope(&[b"ord", &[1], b"text/plain;charset=utf-8"])]),
-            vec![ParsedEnvelope {
-                payload: Nft {
-                    content_type: Some(b"text/plain;charset=utf-8".to_vec()),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }],
-        );
-    }
-
-    #[test]
-    fn no_content_type() {
-        assert_eq!(
-            parse(&[envelope(&[b"ord", &[], b"foo"])]),
+            parsed_envelope(&[witness_from_script(&[b"ord", &[], b"foo"])]),
             vec![ParsedEnvelope {
                 payload: Nft {
                     body: Some(b"foo".to_vec()),
@@ -597,9 +786,43 @@ mod tests {
     }
 
     #[test]
-    fn valid_body_in_multiple_pushes() {
+    fn envelope_should_parse_a_valid_nft_with_no_body() {
         assert_eq!(
-            parse(&[envelope(&[
+            parsed_envelope(&[witness_from_script(&[
+                b"ord",
+                &[1],
+                b"text/plain;charset=utf-8"
+            ])]),
+            vec![ParsedEnvelope {
+                payload: Nft {
+                    content_type: Some(b"text/plain;charset=utf-8".to_vec()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }],
+        );
+    }
+
+    #[test]
+    fn envelope_should_parse_an_nft_with_valid_body_in_zero_data_pushes() {
+        assert_eq!(
+            parsed_envelope(&[witness_from_script(&[
+                b"ord",
+                &[1],
+                b"text/plain;charset=utf-8",
+                &[]
+            ])]),
+            vec![ParsedEnvelope {
+                payload: create_nft("text/plain;charset=utf-8", ""),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn envelope_should_parse_an_nft_with_valid_body_in_multiple_data_pushes() {
+        assert_eq!(
+            parsed_envelope(&[witness_from_script(&[
                 b"ord",
                 &[1],
                 b"text/plain;charset=utf-8",
@@ -615,18 +838,24 @@ mod tests {
     }
 
     #[test]
-    fn valid_body_in_zero_pushes() {
+    fn envelope_should_parse_a_valid_nft_in_a_single_witness() {
         assert_eq!(
-            parse(&[envelope(&[b"ord", &[1], b"text/plain;charset=utf-8", &[]])]),
+            parsed_envelope(&[witness_from_script(&[
+                b"ord",
+                &[1],
+                b"text/plain;charset=utf-8",
+                &[],
+                b"ord"
+            ])]),
             vec![ParsedEnvelope {
-                payload: create_nft("text/plain;charset=utf-8", ""),
+                payload: create_nft("text/plain;charset=utf-8", "ord"),
                 ..Default::default()
-            }]
+            }],
         );
     }
 
     #[test]
-    fn multiple_inscriptions_in_a_single_witness() {
+    fn envelope_should_parse_valid_multiple_nfts_in_a_single_witness() {
         let script = ScriptBuilder::new()
             .push_opcode(opcodes::OP_FALSE)
             .push_opcode(opcodes::all::OP_IF)
@@ -647,7 +876,7 @@ mod tests {
             .into_script();
 
         assert_eq!(
-            parse(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]),
+            parsed_envelope(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]),
             vec![
                 ParsedEnvelope {
                     payload: create_nft("text/plain;charset=utf-8", "foo"),
@@ -659,23 +888,6 @@ mod tests {
                     ..Default::default()
                 },
             ],
-        );
-    }
-
-    #[test]
-    fn extract_from_transaction() {
-        assert_eq!(
-            parse(&[envelope(&[
-                b"ord",
-                &[1],
-                b"text/plain;charset=utf-8",
-                &[],
-                b"ord"
-            ])]),
-            vec![ParsedEnvelope {
-                payload: create_nft("text/plain;charset=utf-8", "ord"),
-                ..Default::default()
-            }],
         );
     }
 }
