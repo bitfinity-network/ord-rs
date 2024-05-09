@@ -12,7 +12,7 @@ use bitcoin::{opcodes, Script, Transaction};
 
 use crate::constants::{
     CONTENT_ENCODING_TAG, CONTENT_TYPE_TAG, DELEGATE_TAG, METADATA_TAG, METAPROTOCOL_TAG,
-    PARENT_TAG, POINTER_TAG, PROTOCOL_ID,
+    PARENT_TAG, POINTER_TAG, PROTOCOL_ID, RUNE_TAG,
 };
 use crate::{Inscription, Nft};
 
@@ -255,8 +255,9 @@ impl From<RawEnvelope> for ParsedEnvelope {
         let delegate = remove_field(&mut fields, &DELEGATE_TAG);
         let metadata = remove_and_concatenate_field(&mut fields, &METADATA_TAG);
         let metaprotocol = remove_field(&mut fields, &METAPROTOCOL_TAG);
-        let parent = remove_field(&mut fields, &PARENT_TAG);
+        let parents = remove_array(&mut fields, PARENT_TAG);
         let pointer = remove_field(&mut fields, &POINTER_TAG);
+        let rune = remove_field(&mut fields, &RUNE_TAG);
 
         let unrecognized_even_field = fields
             .keys()
@@ -272,7 +273,7 @@ impl From<RawEnvelope> for ParsedEnvelope {
                         .collect()
                 }),
                 metaprotocol,
-                parent,
+                parents,
                 delegate,
                 content_encoding,
                 content_type,
@@ -281,6 +282,7 @@ impl From<RawEnvelope> for ParsedEnvelope {
                 metadata,
                 pointer,
                 unrecognized_even_field,
+                rune,
             },
             input: envelope.input,
             offset: envelope.offset,
@@ -317,6 +319,15 @@ fn remove_and_concatenate_field(
     } else {
         Some(value.into_iter().flatten().cloned().collect())
     }
+}
+
+fn remove_array(fields: &mut BTreeMap<&[u8], Vec<&[u8]>>, tag: [u8; 1]) -> Vec<Vec<u8>> {
+    fields
+        .remove(tag.as_slice())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| v.to_vec())
+        .collect()
 }
 
 #[cfg(test)]

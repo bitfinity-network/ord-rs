@@ -1,3 +1,13 @@
+//! An implementation of the [BRC20 Token Standard](https://domo-2.gitbook.io/brc-20-experiment),
+//! an experiment to see if [Ordinal Theory](https://docs.ordinals.com/) can facilitate fungibility on Bitcoin.
+//!
+//! 1. Deployments initialize the BRC-20. Do not affect state.
+//! 2. Mints provide a balance to only the first owner of the mint function inscription.
+//! 3. Transfers deduct from the sender's balance and add to the receiver's balance,
+//! only upon the first transfer of the transfer function. That is,
+//! - step 1. Sender inscribes the transfer function to sender's (own) address.
+//! - step 2. Sender transfers transfer function to final destination address.
+
 use std::str::FromStr;
 
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
@@ -137,7 +147,7 @@ pub struct Brc20Deploy {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub dec: Option<u64>,
-    /// Self mint: Set the ticker to be mintable only by the deployment holder
+    /// Self mint (optional): Set the ticker to be mintable only by the deployment holder
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub self_mint: Option<bool>,

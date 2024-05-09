@@ -6,11 +6,13 @@ pub mod id;
 pub mod nft_tests;
 
 use std::io::Cursor;
+use std::mem;
 use std::str::FromStr;
 
+use bitcoin::constants::MAX_SCRIPT_ELEMENT_SIZE;
+use bitcoin::opcodes;
 use bitcoin::opcodes::all::OP_CHECKSIG;
-use bitcoin::opcodes::{self};
-use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf, ScriptBuf};
+use bitcoin::script::{Builder as ScriptBuilder, PushBytes, PushBytesBuf, ScriptBuf};
 use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -41,9 +43,9 @@ pub struct Nft {
     /// Has a tag of 2, representing the position of the inscribed satoshi in the outputs.
     /// It is used to locate the specific satoshi that carries this inscription.
     pub pointer: Option<Vec<u8>>,
-    /// Has a tag of 3, representing the parent NFT, i.e., the owner of an NFT
+    /// Has a tag of 3, representing the parent NFTs, i.e., the owner of an NFT
     /// can create child NFTs, establishing a hierarchy or a collection of related NFTs.
-    pub parent: Option<Vec<u8>>,
+    pub parents: Vec<Vec<u8>>,
     /// Has a tag of 5, representing CBOR (Concise Binary Object Representation) metadata,
     /// stored as data pushes. This is used for storing structured metadata in a compact format.
     pub metadata: Option<Vec<u8>>,
@@ -67,6 +69,8 @@ pub struct Nft {
     /// Has a tag of 11, representing a nominated NFT. Used to delegate certain rights or
     /// attributes from one NFT to another, effectively linking them in a specified relationship.
     pub delegate: Option<Vec<u8>>,
+    /// Has a tag of 13, denoting whether or not this inscription caries any rune.
+    pub rune: Option<Vec<u8>>,
 }
 
 impl Nft {
@@ -104,51 +108,69 @@ impl Nft {
             .push_opcode(opcodes::all::OP_IF)
             .push_slice(constants::PROTOCOL_ID);
 
-        if let Some(content_type) = self.content_type.clone() {
-            builder = builder
-                .push_slice(constants::CONTENT_TYPE_TAG)
-                .push_slice(PushBytesBuf::try_from(content_type)?);
-        }
-
-        if let Some(content_encoding) = self.content_encoding.clone() {
-            builder = builder
-                .push_slice(constants::CONTENT_ENCODING_TAG)
-                .push_slice(PushBytesBuf::try_from(content_encoding)?);
-        }
-
-        if let Some(protocol) = self.metaprotocol.clone() {
-            builder = builder
-                .push_slice(constants::METAPROTOCOL_TAG)
-                .push_slice(PushBytesBuf::try_from(protocol)?);
-        }
-
-        if let Some(parent) = self.parent.clone() {
-            builder = builder
-                .push_slice(constants::PARENT_TAG)
-                .push_slice(PushBytesBuf::try_from(parent)?);
-        }
-
-        if let Some(pointer) = self.pointer.clone() {
-            builder = builder
-                .push_slice(constants::POINTER_TAG)
-                .push_slice(PushBytesBuf::try_from(pointer)?);
-        }
-
-        if let Some(metadata) = &self.metadata {
-            for chunk in metadata.chunks(520) {
-                builder = builder.push_slice(constants::METADATA_TAG);
-                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec())?);
-            }
-        }
+        Self::append(
+            constants::CONTENT_TYPE_TAG,
+            &mut builder,
+            &self.content_type,
+        );
+        Self::append(
+            constants::CONTENT_ENCODING_TAG,
+            &mut builder,
+            &self.content_encoding,
+        );
+        Self::append(
+            constants::METAPROTOCOL_TAG,
+            &mut builder,
+            &self.metaprotocol,
+        );
+        Self::append_array(constants::PARENT_TAG, &mut builder, &self.parents);
+        Self::append(constants::DELEGATE_TAG, &mut builder, &self.delegate);
+        Self::append(constants::POINTER_TAG, &mut builder, &self.pointer);
+        Self::append(constants::METADATA_TAG, &mut builder, &self.metadata);
+        Self::append(constants::RUNE_TAG, &mut builder, &self.rune);
 
         if let Some(body) = &self.body {
             builder = builder.push_slice(constants::BODY_TAG);
-            for chunk in body.chunks(520) {
-                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec())?);
+            for chunk in body.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
+                builder = builder.push_slice::<&PushBytes>(chunk.try_into().unwrap());
             }
         }
 
         Ok(builder.push_opcode(opcodes::all::OP_ENDIF))
+    }
+
+    fn append(tag: [u8; 1], builder: &mut ScriptBuilder, value: &Option<Vec<u8>>) {
+        if let Some(value) = value {
+            let mut tmp = ScriptBuilder::new();
+            mem::swap(&mut tmp, builder);
+
+            if is_chunked(tag) {
+                for chunk in value.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
+                    tmp = tmp
+                        .push_slice::<&PushBytes>(tag.as_slice().try_into().unwrap())
+                        .push_slice::<&PushBytes>(chunk.try_into().unwrap());
+                }
+            } else {
+                tmp = tmp
+                    .push_slice::<&PushBytes>(tag.as_slice().try_into().unwrap())
+                    .push_slice::<&PushBytes>(value.as_slice().try_into().unwrap());
+            }
+
+            mem::swap(&mut tmp, builder);
+        }
+    }
+
+    fn append_array(tag: [u8; 1], builder: &mut ScriptBuilder, values: &Vec<Vec<u8>>) {
+        let mut tmp = ScriptBuilder::new();
+        mem::swap(&mut tmp, builder);
+
+        for value in values {
+            tmp = tmp
+                .push_slice::<&PushBytes>(tag.as_slice().try_into().unwrap())
+                .push_slice::<&PushBytes>(value.as_slice().try_into().unwrap());
+        }
+
+        mem::swap(&mut tmp, builder);
     }
 
     /// Creates a new `Nft` from JSON-encoded string.
@@ -229,6 +251,10 @@ impl Inscription for Nft {
     {
         Ok(serde_json::from_slice(data).map_err(|_| InscriptionParseError::BadDataSyntax)?)
     }
+}
+
+fn is_chunked(tag: [u8; 1]) -> bool {
+    matches!(tag, constants::METADATA_TAG)
 }
 
 #[cfg(test)]
