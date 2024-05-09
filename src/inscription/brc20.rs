@@ -11,7 +11,7 @@ use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
 
 const PROTOCOL: &str = "brc-20";
 
-/// BRC-20 operation
+/// Represents a BRC-20 operation: (Deploy, Mint, Transfer)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op")]
 pub enum Brc20 {
@@ -28,13 +28,20 @@ pub enum Brc20 {
 
 impl Brc20 {
     /// Create a new BRC-20 deploy operation
-    pub fn deploy(tick: impl ToString, max: u64, lim: Option<u64>, dec: Option<u64>) -> Self {
+    pub fn deploy(
+        tick: impl ToString,
+        max: u64,
+        lim: Option<u64>,
+        dec: Option<u64>,
+        self_mint: Option<bool>,
+    ) -> Self {
         Self::Deploy(Brc20Deploy {
             protocol: PROTOCOL.to_string(),
             tick: tick.to_string(),
             max,
             lim,
             dec,
+            self_mint,
         })
     }
 
@@ -110,38 +117,57 @@ impl Inscription for Brc20 {
     }
 }
 
+/// `deploy` op
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Brc20Deploy {
+    /// Protocol (required): Helps other systems identify and process brc-20 events
     #[serde(rename = "p")]
     protocol: String,
+    /// Ticker (required): 4 or 5 letter identifier of the brc-20
     pub tick: String,
+    /// Max supply (required): Set max supply of the brc-20
     #[serde_as(as = "DisplayFromStr")]
     pub max: u64,
+    /// Mint limit (optional): If letting users mint to themsleves, limit per ordinal
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub lim: Option<u64>,
+    /// Decimals (optional): Set decimal precision, default to 18
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub dec: Option<u64>,
+    /// Self mint: Set the ticker to be mintable only by the deployment holder
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub self_mint: Option<bool>,
 }
 
+/// `mint` op
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Brc20Mint {
+    /// Protocol (required): Helps other systems identify and process brc-20 events
     #[serde(rename = "p")]
     protocol: String,
+    /// Ticker (required): 4 or 5 letter identifier of the brc-20
     pub tick: String,
+    /// Amount to mint (required): States the amount of the brc-20 to mint.
+    /// Has to be less than "lim" of the `deploy` op if stated.
     #[serde_as(as = "DisplayFromStr")]
     pub amt: u64,
 }
 
+/// `transfer` op
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Brc20Transfer {
+    /// Protocol (required): Helps other systems identify and process brc-20 events
     #[serde(rename = "p")]
     protocol: String,
+    /// Ticker (required): 4 or 5 letter identifier of the brc-20
     pub tick: String,
+    /// Amount to transfer (required): States the amount of the brc-20 to transfer.
     #[serde_as(as = "DisplayFromStr")]
     pub amt: u64,
 }
@@ -161,7 +187,8 @@ mod test {
                 "tick": "ordi",
                 "max": "21000000",
                 "lim": "1000",
-                "dec": "8"
+                "dec": "8",
+                "self_mint": "false"
               }
             "#,
         )
@@ -174,7 +201,8 @@ mod test {
                 tick: "ordi".to_string(),
                 max: 21000000,
                 lim: Some(1000),
-                dec: Some(8)
+                dec: Some(8),
+                self_mint: Some(false)
             })
         );
 
@@ -197,7 +225,8 @@ mod test {
                 tick: "ordi".to_string(),
                 max: 21000000,
                 lim: None,
-                dec: None
+                dec: None,
+                self_mint: None,
             })
         );
     }

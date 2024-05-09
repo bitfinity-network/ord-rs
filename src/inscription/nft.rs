@@ -1,5 +1,5 @@
 //! NFT
-//! Taken from https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs and
+//! Taken from https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs
 
 pub mod id;
 #[cfg(test)]
