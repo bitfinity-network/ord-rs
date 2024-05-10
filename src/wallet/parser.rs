@@ -197,8 +197,7 @@ mod tests {
         .await
         .unwrap();
 
-        let parse_result = OrdParser::parse_all(&transaction).unwrap();
-        assert!(parse_result.is_empty());
+        assert!(OrdParser::parse_all(&transaction).unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -210,8 +209,7 @@ mod tests {
         .await
         .unwrap();
 
-        let parse_result = OrdParser::parse_all(&transaction).unwrap();
-        assert!(parse_result.is_empty());
+        assert!(OrdParser::parse_all(&transaction).unwrap().is_empty());
     }
 
     #[test]
@@ -277,15 +275,14 @@ mod tests {
         let ordinal_data = create_nft("text/plain", "Hello, world!").encode().unwrap();
 
         let inscriptions = vec![ordinal_data.as_bytes().to_vec(), brc20_data.to_vec()];
+        let parsed_inscriptions = OrdParser::from_raw(inscriptions.clone()).unwrap();
 
         let nft = create_nft("text/plain", "Hello, world!");
-        let parsed_nft =
-            Nft::try_from(OrdParser::from_raw(inscriptions.clone()).unwrap()[0].clone()).unwrap();
+        let parsed_nft = Nft::try_from(parsed_inscriptions.clone()[0].clone()).unwrap();
         assert_eq!(nft, parsed_nft);
 
         let brc20 = Brc20::deploy("ordi", 21000000, Some(1000), Some(8), Some(false));
-        let parsed_brc20 =
-            Brc20::try_from(OrdParser::from_raw(inscriptions).unwrap()[1].clone()).unwrap();
+        let parsed_brc20 = Brc20::try_from(parsed_inscriptions[1].clone()).unwrap();
         assert_eq!(brc20, parsed_brc20);
     }
 }
