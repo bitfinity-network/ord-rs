@@ -117,9 +117,7 @@ impl TryFrom<OrdParser> for Nft {
         match parser {
             OrdParser::Ordinal(nft) => Ok(nft),
             _ => Err(OrdError::InscriptionParser(
-                InscriptionParseError::OrdParser(
-                    "Cannot convert non-Ordinal inscription to Nft".to_string(),
-                ),
+                InscriptionParseError::NotOrdinal,
             )),
         }
     }
@@ -131,11 +129,7 @@ impl TryFrom<OrdParser> for Brc20 {
     fn try_from(parser: OrdParser) -> Result<Self, Self::Error> {
         match parser {
             OrdParser::Brc20(brc20) => Ok(brc20),
-            _ => Err(OrdError::InscriptionParser(
-                InscriptionParseError::OrdParser(
-                    "Cannot convert non-Brc20 inscription to Brc20".to_string(),
-                ),
-            )),
+            _ => Err(OrdError::InscriptionParser(InscriptionParseError::NotBrc20)),
         }
     }
 }
