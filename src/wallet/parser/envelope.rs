@@ -316,7 +316,7 @@ mod tests {
     use bitcoin::{OutPoint, ScriptBuf, Sequence, TxIn, Witness};
 
     use super::*;
-    use crate::inscription::nft::nft_tests::create_nft;
+    use crate::inscription::nft::create_nft;
     use crate::Brc20;
 
     fn witness_from_script(payload: &[&[u8]]) -> Witness {

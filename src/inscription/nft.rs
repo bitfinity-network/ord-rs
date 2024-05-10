@@ -1,10 +1,6 @@
 //! NFT
 //! Closely follows https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs
 
-pub mod id;
-#[cfg(test)]
-pub mod nft_tests;
-
 use std::io::Cursor;
 use std::mem;
 use std::str::FromStr;
@@ -236,9 +232,13 @@ fn is_chunked(tag: [u8; 1]) -> bool {
     matches!(tag, constants::METADATA_TAG)
 }
 
+#[allow(unused)]
+pub(crate) fn create_nft(content_type: &str, body: impl AsRef<[u8]>) -> Nft {
+    Nft::new(Some(content_type.into()), Some(body.as_ref().into()))
+}
+
 #[cfg(test)]
 mod tests {
-    use nft_tests::create_nft;
 
     use super::*;
 

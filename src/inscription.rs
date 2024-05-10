@@ -1,4 +1,5 @@
 pub mod brc20;
+pub mod iid;
 pub mod nft;
 
 use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};

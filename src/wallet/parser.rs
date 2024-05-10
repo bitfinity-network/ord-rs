@@ -169,7 +169,7 @@ mod tests {
     use bitcoin::{opcodes, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Witness};
 
     use super::*;
-    use crate::inscription::nft::nft_tests::create_nft;
+    use crate::inscription::nft::create_nft;
     use crate::utils::test_utils::get_transaction_by_id;
 
     #[tokio::test]
