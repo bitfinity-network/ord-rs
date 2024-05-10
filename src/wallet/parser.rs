@@ -274,18 +274,18 @@ mod tests {
             "dec": "8",
             "self_mint": "false"
         }"#;
-
         let ordinal_data = create_nft("text/plain", "Hello, world!").encode().unwrap();
 
         let inscriptions = vec![ordinal_data.as_bytes().to_vec(), brc20_data.to_vec()];
 
-        assert!(matches!(
-            OrdParser::from_raw(inscriptions.clone()).unwrap()[0],
-            OrdParser::Ordinal(_)
-        ));
-        assert!(matches!(
-            OrdParser::from_raw(inscriptions).unwrap()[1],
-            OrdParser::Brc20(_)
-        ));
+        let nft = create_nft("text/plain", "Hello, world!");
+        let parsed_nft =
+            Nft::try_from(OrdParser::from_raw(inscriptions.clone()).unwrap()[0].clone()).unwrap();
+        assert_eq!(nft, parsed_nft);
+
+        let brc20 = Brc20::deploy("ordi", 21000000, Some(1000), Some(8), Some(false));
+        let parsed_brc20 =
+            Brc20::try_from(OrdParser::from_raw(inscriptions).unwrap()[1].clone()).unwrap();
+        assert_eq!(brc20, parsed_brc20);
     }
 }
