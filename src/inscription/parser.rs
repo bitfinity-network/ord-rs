@@ -1,4 +1,4 @@
-// The envelope-parsing logic is borrowed from
+// A significant portion of the envelope-parsing logic is borrowed from
 // https://github.com/ordinals/ord/blob/master/src/inscriptions/envelope.rs
 
 use std::collections::BTreeMap;
@@ -37,8 +37,15 @@ impl InscriptionParser {
     pub fn parse_all(tx: &Transaction) -> OrdResult<Vec<Self>> {
         let data = ParsedEnvelope::from_transaction(tx)
             .into_iter()
-            .map(|envelope| envelope.payload.body.unwrap_or_default())
-            .collect::<Vec<_>>();
+            .map(|envelope| {
+                envelope.payload.body.ok_or(OrdError::InscriptionParser(
+                    InscriptionParseError::ParsedEnvelope(
+                        "Empty payload body in envelope".to_string(),
+                    ),
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         Self::from_raw(data)
     }
 
@@ -112,15 +119,25 @@ impl From<Nft> for InscriptionParser {
     }
 }
 
-impl From<InscriptionParser> for Nft {
-    fn from(parser: InscriptionParser) -> Self {
-        parser.into()
+impl TryFrom<InscriptionParser> for Nft {
+    type Error = String;
+
+    fn try_from(parser: InscriptionParser) -> Result<Self, Self::Error> {
+        match parser {
+            InscriptionParser::Ordinal(nft) => Ok(nft),
+            _ => Err("Cannot convert non-Ordinal inscription to Nft".to_string()),
+        }
     }
 }
 
-impl From<InscriptionParser> for Brc20 {
-    fn from(parser: InscriptionParser) -> Self {
-        parser.into()
+impl TryFrom<InscriptionParser> for Brc20 {
+    type Error = String;
+
+    fn try_from(parser: InscriptionParser) -> Result<Self, Self::Error> {
+        match parser {
+            InscriptionParser::Brc20(brc20) => Ok(brc20),
+            _ => Err("Cannot convert non-Brc20 inscription to Brc20".to_string()),
+        }
     }
 }
 
@@ -451,7 +468,7 @@ mod tests {
     use bitcoin::absolute::LockTime;
     use bitcoin::script::{Builder as ScriptBuilder, PushBytes, PushBytesBuf};
     use bitcoin::transaction::Version;
-    use bitcoin::{OutPoint, ScriptBuf, Sequence, TxIn, Witness};
+    use bitcoin::{Network, OutPoint, ScriptBuf, Sequence, TxIn, Witness};
 
     use super::*;
     use crate::inscription::nft::nft_tests::create_nft;
@@ -491,37 +508,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ord_parser_should_parse_testnet_brc20_p2tr() {
+    async fn ord_parser_should_parse_valid_brc20_inscription_mainnet() {
         let transaction = get_transaction_by_id(
-            "ff314aebaa91a3f10cfba576d3be958127aba982d29146735e612869567e7808",
-            bitcoin::Network::Testnet,
+            "b61b0172d95e266c18aea0c624db987e971a5d6d4ebc2aaed85da4642d635735",
+            Network::Bitcoin,
         )
         .await
         .unwrap();
 
-        let parsed_brc20: Brc20 = InscriptionParser::parse_all(&transaction).unwrap()[0]
-            .clone()
-            .into();
-        assert_eq!(parsed_brc20, Brc20::transfer("mona", 100));
+        let parse_result = InscriptionParser::parse_all(&transaction).unwrap();
+        assert!(!parse_result.is_empty());
+
+        let parsed_brc20 = InscriptionParser::parse_all(&transaction).unwrap()[0].clone();
+        let parsed_brc20 = Brc20::try_from(parsed_brc20).unwrap();
+        let brc20 = Brc20::deploy("ordi", 21000000, Some(1000), None, None);
+
+        assert_eq!(parsed_brc20, brc20);
     }
 
     #[tokio::test]
-    async fn ord_parser_should_parse_testnet_brc20_p2wsh() {
-        let transaction = get_transaction_by_id(
-            "c769750df54ee38fe2bae876dbf1632c779c3af780958a19cee1ca0497c78e80",
-            bitcoin::Network::Testnet,
-        )
-        .await
-        .unwrap();
-
-        let parsed_brc20: Brc20 = InscriptionParser::parse_all(&transaction).unwrap()[0]
-            .clone()
-            .into();
-        assert_eq!(parsed_brc20, Brc20::transfer("mona", 100));
-    }
-
-    #[tokio::test]
-    async fn ord_parser_should_not_parse_a_non_brc20_inscription() {
+    async fn ord_parser_should_not_parse_a_non_brc20_inscription_mainnet() {
         let transaction = get_transaction_by_id(
             "37777defed8717c581b4c0509329550e344bdc14ac38f71fc050096887e535c8",
             bitcoin::Network::Bitcoin,
@@ -529,14 +535,26 @@ mod tests {
         .await
         .unwrap();
 
-        let parse_result: OrdResult<Vec<InscriptionParser>> =
-            InscriptionParser::parse_all(&transaction);
-        assert!(parse_result.is_err());
+        let parse_result = InscriptionParser::parse_all(&transaction).unwrap();
+        assert!(parse_result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ord_parser_should_not_parse_a_non_brc20_inscription_testnet() {
+        let transaction = get_transaction_by_id(
+            "5b8ee749df4a3cfc37344892a97f1819fac80fb2432289a474dc0f0fd3711208",
+            bitcoin::Network::Testnet,
+        )
+        .await
+        .unwrap();
+
+        let parse_result = InscriptionParser::parse_all(&transaction).unwrap();
+        assert!(parse_result.is_empty());
     }
 
     #[test]
     fn ord_parser_should_return_a_valid_brc20_from_raw_transaction_data() {
-        let kobp_brc20 = br#"{
+        let brc20 = br#"{
             "p": "brc-20",
             "op": "deploy",
             "tick": "kobp",
@@ -553,7 +571,7 @@ mod tests {
             .push_slice([1])
             .push_slice(b"text/plain;charset=utf-8")
             .push_slice([])
-            .push_slice::<&PushBytes>(kobp_brc20.as_slice().try_into().unwrap())
+            .push_slice::<&PushBytes>(brc20.as_slice().try_into().unwrap())
             .push_opcode(opcodes::all::OP_ENDIF)
             .into_script();
 
@@ -574,14 +592,11 @@ mod tests {
             output: Vec::new(),
         };
 
-        let parse_result = InscriptionParser::parse_all(&transaction);
-        assert!(parse_result.is_ok());
-        let parse_result = parse_result.unwrap();
-
-        let parsed_kobp_brc20: Brc20 = parse_result[0].clone().into();
+        let parsed_brc20 = InscriptionParser::parse_all(&transaction).unwrap()[0].clone();
+        let brc20 = Brc20::try_from(parsed_brc20).unwrap();
 
         assert_eq!(
-            parsed_kobp_brc20,
+            brc20,
             Brc20::deploy("kobp", 1000, Some(10), Some(8), Some(true))
         );
     }
