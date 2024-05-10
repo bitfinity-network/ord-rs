@@ -182,10 +182,12 @@ mod tests {
         .unwrap();
 
         let parsed_brc20 = OrdParser::parse_all(&transaction).unwrap()[0].clone();
-        let parsed_brc20 = Brc20::try_from(parsed_brc20).unwrap();
-        let brc20 = Brc20::deploy("ordi", 21000000, Some(1000), None, None);
+        let brc20 = Brc20::try_from(parsed_brc20).unwrap();
 
-        assert_eq!(parsed_brc20, brc20);
+        assert_eq!(
+            brc20,
+            Brc20::deploy("ordi", 21000000, Some(1000), None, None)
+        );
     }
 
     #[tokio::test]
@@ -262,6 +264,66 @@ mod tests {
     }
 
     #[test]
+    fn ord_parser_should_parse_valid_multiple_inscriptions_from_a_single_transaction() {
+        let brc20 = br#"{
+            "p": "brc-20",
+            "op": "deploy",
+            "tick": "kobp",
+            "max": "1000",
+            "lim": "10",
+            "dec": "8",
+            "self_mint": "true"
+        }"#;
+        let ordinal = create_nft("text/plain", "Hello, world!").encode().unwrap();
+
+        let script = ScriptBuilder::new()
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(brc20.as_slice().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(ordinal.as_bytes().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script();
+
+        let witnesses = &[Witness::from_slice(&[script.into_bytes(), Vec::new()])];
+
+        let transaction = Transaction {
+            version: Version::ONE,
+            lock_time: LockTime::ZERO,
+            input: witnesses
+                .iter()
+                .map(|witness| TxIn {
+                    previous_output: OutPoint::null(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: witness.clone(),
+                })
+                .collect(),
+            output: Vec::new(),
+        };
+
+        let parsed_inscriptions = OrdParser::parse_all(&transaction).unwrap();
+        let parsed_brc20 = Brc20::try_from(parsed_inscriptions.clone()[0].clone()).unwrap();
+        let parsed_ordinal = Nft::try_from(parsed_inscriptions[1].clone()).unwrap();
+
+        assert_eq!(
+            parsed_brc20,
+            Brc20::deploy("kobp", 1000, Some(10), Some(8), Some(true))
+        );
+        assert_eq!(parsed_ordinal, create_nft("text/plain", "Hello, world!"));
+    }
+
+    #[test]
     fn ord_parser_should_parse_different_valid_inscription_types_from_raw_bytes() {
         let brc20_data = br#"{
             "p": "brc-20",
@@ -278,11 +340,15 @@ mod tests {
         let parsed_inscriptions = OrdParser::from_raw(inscriptions.clone()).unwrap();
 
         let nft = create_nft("text/plain", "Hello, world!");
-        let parsed_nft = Nft::try_from(parsed_inscriptions.clone()[0].clone()).unwrap();
-        assert_eq!(nft, parsed_nft);
+        assert_eq!(
+            nft,
+            Nft::try_from(parsed_inscriptions.clone()[0].clone()).unwrap()
+        );
 
         let brc20 = Brc20::deploy("ordi", 21000000, Some(1000), Some(8), Some(false));
-        let parsed_brc20 = Brc20::try_from(parsed_inscriptions[1].clone()).unwrap();
-        assert_eq!(brc20, parsed_brc20);
+        assert_eq!(
+            brc20,
+            Brc20::try_from(parsed_inscriptions[1].clone()).unwrap()
+        );
     }
 }
