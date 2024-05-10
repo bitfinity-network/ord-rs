@@ -23,7 +23,6 @@ pub use bitcoin;
 pub use error::{InscriptionParseError, OrdError};
 pub use inscription::brc20::Brc20;
 pub use inscription::nft::Nft;
-pub use inscription::parser::InscriptionParser;
 pub use inscription::Inscription;
 pub use result::OrdResult;
 pub use utils::fees::{self, MultisigConfig};
