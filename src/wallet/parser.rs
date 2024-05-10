@@ -120,23 +120,31 @@ impl From<Nft> for OrdParser {
 }
 
 impl TryFrom<OrdParser> for Nft {
-    type Error = String;
+    type Error = OrdError;
 
     fn try_from(parser: OrdParser) -> Result<Self, Self::Error> {
         match parser {
             OrdParser::Ordinal(nft) => Ok(nft),
-            _ => Err("Cannot convert non-Ordinal inscription to Nft".to_string()),
+            _ => Err(OrdError::InscriptionParser(
+                InscriptionParseError::OrdParser(
+                    "Cannot convert non-Ordinal inscription to Nft".to_string(),
+                ),
+            )),
         }
     }
 }
 
 impl TryFrom<OrdParser> for Brc20 {
-    type Error = String;
+    type Error = OrdError;
 
     fn try_from(parser: OrdParser) -> Result<Self, Self::Error> {
         match parser {
             OrdParser::Brc20(brc20) => Ok(brc20),
-            _ => Err("Cannot convert non-Brc20 inscription to Brc20".to_string()),
+            _ => Err(OrdError::InscriptionParser(
+                InscriptionParseError::OrdParser(
+                    "Cannot convert non-Brc20 inscription to Brc20".to_string(),
+                ),
+            )),
         }
     }
 }
@@ -515,9 +523,6 @@ mod tests {
         )
         .await
         .unwrap();
-
-        let parse_result = OrdParser::parse_all(&transaction).unwrap();
-        assert!(!parse_result.is_empty());
 
         let parsed_brc20 = OrdParser::parse_all(&transaction).unwrap()[0].clone();
         let parsed_brc20 = Brc20::try_from(parsed_brc20).unwrap();

@@ -62,4 +62,6 @@ pub enum InscriptionParseError {
     Index(#[from] std::num::ParseIntError),
     #[error("content of envelope: {0}")]
     ParsedEnvelope(String),
+    #[error("error: {0}")]
+    OrdParser(String),
 }
