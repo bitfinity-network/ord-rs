@@ -335,7 +335,7 @@ mod tests {
         Witness::from_slice(&[script.into_bytes(), Vec::new()])
     }
 
-    fn parsed_envelope(witnesses: &[Witness]) -> Vec<ParsedEnvelope> {
+    fn parse_envelope(witnesses: &[Witness]) -> Vec<ParsedEnvelope> {
         ParsedEnvelope::from_transaction(&Transaction {
             version: Version::ONE,
             lock_time: LockTime::ZERO,
@@ -376,7 +376,7 @@ mod tests {
             .into_script();
 
         let parsed_envelope =
-            parsed_envelope(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]);
+            parse_envelope(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]);
         let parsed_brc20: Brc20 =
             serde_json::from_slice(parsed_envelope[0].payload.body.as_ref().unwrap()).unwrap();
 
@@ -427,7 +427,7 @@ mod tests {
             .into_script();
 
         let parsed_envelopes =
-            parsed_envelope(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]);
+            parse_envelope(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]);
         assert_eq!(parsed_envelopes.len(), 2);
 
         let parsed_ordi_brc20: Brc20 =
@@ -447,13 +447,13 @@ mod tests {
 
     #[test]
     fn envelope_should_parse_an_empty_witness() {
-        assert_eq!(parsed_envelope(&[Witness::new()]), Vec::new())
+        assert_eq!(parse_envelope(&[Witness::new()]), Vec::new())
     }
 
     #[test]
     fn envelope_should_parse_witness_from_tapscript() {
         assert_eq!(
-            parsed_envelope(&[Witness::from_slice(&[
+            parse_envelope(&[Witness::from_slice(&[
                 ScriptBuilder::new()
                     .push_opcode(opcodes::OP_FALSE)
                     .push_opcode(opcodes::all::OP_IF)
@@ -472,7 +472,7 @@ mod tests {
     #[test]
     fn envelope_should_parse_witness_with_no_inscription() {
         assert_eq!(
-            parsed_envelope(&[Witness::from_slice(&[
+            parse_envelope(&[Witness::from_slice(&[
                 ScriptBuf::new().into_bytes(),
                 Vec::new()
             ])]),
@@ -483,7 +483,7 @@ mod tests {
     #[test]
     fn envelope_should_detect_duplicate_field_in_an_nft() {
         assert_eq!(
-            parsed_envelope(&[witness_from_script(&[b"ord", &[255], &[], &[255], &[]])]),
+            parse_envelope(&[witness_from_script(&[b"ord", &[255], &[], &[255], &[]])]),
             vec![ParsedEnvelope {
                 payload: Nft {
                     duplicate_field: true,
@@ -497,7 +497,7 @@ mod tests {
     #[test]
     fn envelope_should_parse_a_valid_nft_with_a_content_type() {
         assert_eq!(
-            parsed_envelope(&[witness_from_script(&[
+            parse_envelope(&[witness_from_script(&[
                 b"ord",
                 &[1],
                 b"text/plain;charset=utf-8",
@@ -514,7 +514,7 @@ mod tests {
     #[test]
     fn envelope_should_parse_a_valid_nft_with_no_content_type() {
         assert_eq!(
-            parsed_envelope(&[witness_from_script(&[b"ord", &[], b"foo"])]),
+            parse_envelope(&[witness_from_script(&[b"ord", &[], b"foo"])]),
             vec![ParsedEnvelope {
                 payload: Nft {
                     body: Some(b"foo".to_vec()),
@@ -528,7 +528,7 @@ mod tests {
     #[test]
     fn envelope_should_parse_a_valid_nft_with_no_body() {
         assert_eq!(
-            parsed_envelope(&[witness_from_script(&[
+            parse_envelope(&[witness_from_script(&[
                 b"ord",
                 &[1],
                 b"text/plain;charset=utf-8"
@@ -546,7 +546,7 @@ mod tests {
     #[test]
     fn envelope_should_parse_an_nft_with_valid_body_in_zero_data_pushes() {
         assert_eq!(
-            parsed_envelope(&[witness_from_script(&[
+            parse_envelope(&[witness_from_script(&[
                 b"ord",
                 &[1],
                 b"text/plain;charset=utf-8",
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn envelope_should_parse_an_nft_with_valid_body_in_multiple_data_pushes() {
         assert_eq!(
-            parsed_envelope(&[witness_from_script(&[
+            parse_envelope(&[witness_from_script(&[
                 b"ord",
                 &[1],
                 b"text/plain;charset=utf-8",
@@ -580,7 +580,7 @@ mod tests {
     #[test]
     fn envelope_should_parse_a_valid_nft_in_a_single_witness() {
         assert_eq!(
-            parsed_envelope(&[witness_from_script(&[
+            parse_envelope(&[witness_from_script(&[
                 b"ord",
                 &[1],
                 b"text/plain;charset=utf-8",
@@ -616,7 +616,7 @@ mod tests {
             .into_script();
 
         assert_eq!(
-            parsed_envelope(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]),
+            parse_envelope(&[Witness::from_slice(&[script.into_bytes(), Vec::new()])]),
             vec![
                 ParsedEnvelope {
                     payload: create_nft("text/plain;charset=utf-8", "foo"),
