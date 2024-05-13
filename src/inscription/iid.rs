@@ -3,10 +3,11 @@
 use std::str::FromStr;
 
 use bitcoin::hashes::Hash;
-use bitcoin::Txid;
+use bitcoin::{OutPoint, Txid};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::error::InscriptionParseError;
+use crate::{OrdError, OrdResult};
 
 #[derive(Debug, PartialEq, Copy, Clone, Hash, Eq, PartialOrd, Ord)]
 pub struct InscriptionId {
@@ -24,17 +25,8 @@ impl Default for InscriptionId {
 }
 
 impl InscriptionId {
-    pub fn from(n: u32) -> InscriptionId {
-        let hex = format!("{n:x}");
-
-        if hex.is_empty() || hex.len() > 1 {
-            panic!();
-        }
-
-        format!("{}i{n}", hex.repeat(64)).parse().unwrap()
-    }
-
-    pub fn value(self) -> Vec<u8> {
+    /// Retrieves the raw InscriptionId bytes.
+    pub fn get_raw(&self) -> Vec<u8> {
         let index = self.index.to_le_bytes();
         let mut index_slice = index.as_slice();
 
@@ -48,6 +40,19 @@ impl InscriptionId {
             .chain(index_slice)
             .copied()
             .collect()
+    }
+
+    /// Creates a new InscriptionId from a transaction's output reference.
+    pub fn from_outpoint(outpoint: OutPoint) -> Self {
+        Self {
+            txid: outpoint.txid,
+            index: outpoint.vout,
+        }
+    }
+
+    /// Creates a new InscriptionId from its string representation.
+    pub fn parse_from_str(iid: &str) -> OrdResult<Self> {
+        Self::from_str(iid).map_err(OrdError::InscriptionParser)
     }
 }
 
@@ -137,6 +142,17 @@ impl FromStr for InscriptionId {
 }
 
 #[cfg(test)]
+fn set_using(n: u32) -> InscriptionId {
+    let hex = format!("{n:x}");
+
+    if hex.is_empty() || hex.len() > 1 {
+        panic!();
+    }
+
+    format!("{}i{n}", hex.repeat(64)).parse().unwrap()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -166,7 +182,7 @@ mod tests {
     #[test]
     fn display() {
         assert_eq!(
-            InscriptionId::from(1).to_string(),
+            set_using(1).to_string(),
             "1111111111111111111111111111111111111111111111111111111111111111i1",
         );
         assert_eq!(
@@ -193,7 +209,7 @@ mod tests {
             "1111111111111111111111111111111111111111111111111111111111111111i1"
                 .parse::<InscriptionId>()
                 .unwrap(),
-            InscriptionId::from(1),
+            set_using(1),
         );
         assert_eq!(
             "1111111111111111111111111111111111111111111111111111111111111111i4294967295"
