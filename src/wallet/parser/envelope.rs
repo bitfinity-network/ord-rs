@@ -17,12 +17,19 @@ type ParseResult<T> = std::result::Result<T, ScriptError>;
 type RawEnvelope = Envelope<Vec<Vec<u8>>>;
 pub(crate) type ParsedEnvelope = Envelope<Nft>;
 
+/// Representation of parsed transaction witness data,
+/// generic over `T` to handle various types.
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct Envelope<T> {
     pub input: u32,
     pub offset: u32,
+    /// Main content of the envelope, generic over `T` to handle various types.
     pub payload: T,
+    /// Denotes whether an instruction is a non-push opcode,
+    /// e.g. bitcoin::script::Instruction::Op(bitcoin::opcodes::all::OP_PUSHNUM_1)
     pub pushnum: bool,
+    /// Indicates whether any stuttering (repeated patterns or data errors)
+    /// was detected during parsing.
     pub stutter: bool,
 }
 

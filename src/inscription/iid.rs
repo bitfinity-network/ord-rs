@@ -9,6 +9,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::error::InscriptionParseError;
 use crate::{OrdError, OrdResult};
 
+/// Represents an Ordinal/BRC20 inscription identifier,
+/// derived from the transaction ID and the associated `vout` (index) of the UTXO
+/// in the format `("{}i{}", self.txid, self.index)`.
 #[derive(Debug, PartialEq, Copy, Clone, Hash, Eq, PartialOrd, Ord)]
 pub struct InscriptionId {
     pub txid: Txid,
@@ -142,17 +145,6 @@ impl FromStr for InscriptionId {
 }
 
 #[cfg(test)]
-fn set_using(n: u32) -> InscriptionId {
-    let hex = format!("{n:x}");
-
-    if hex.is_empty() || hex.len() > 1 {
-        panic!();
-    }
-
-    format!("{}i{n}", hex.repeat(64)).parse().unwrap()
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -168,6 +160,16 @@ mod tests {
           }
         }
       }
+
+    fn set_using(n: u32) -> InscriptionId {
+        let hex = format!("{n:x}");
+
+        if hex.is_empty() || hex.len() > 1 {
+            panic!();
+        }
+
+        format!("{}i{n}", hex.repeat(64)).parse().unwrap()
+    }
 
     fn txid(n: u64) -> Txid {
         let hex = format!("{n:x}");

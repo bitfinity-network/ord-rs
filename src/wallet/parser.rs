@@ -9,9 +9,12 @@ use self::envelope::ParsedEnvelope;
 use crate::wallet::RedeemScriptPubkey;
 use crate::{Brc20, Inscription, InscriptionParseError, Nft, OrdError, OrdResult};
 
+/// Encapsulates inscription parsing logic for both Ordinals and BRC20s.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum OrdParser {
+    /// Denotes a parsed [Nft] inscription.
     Ordinal(Nft),
+    /// Denotes a parsed [Brc20] inscription.
     Brc20(Brc20),
 }
 
