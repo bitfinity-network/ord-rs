@@ -21,6 +21,7 @@ pub(crate) type ParsedEnvelope = Envelope<Nft>;
 /// generic over `T` to handle various types.
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct Envelope<T> {
+    /// Reference to an item's index in the witness.
     pub input: u32,
     pub offset: u32,
     /// Main content of the envelope, generic over `T` to handle various types.
