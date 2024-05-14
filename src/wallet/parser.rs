@@ -1,169 +1,266 @@
-use bitcoin::blockdata::opcodes::all as all_opcodes;
-use bitcoin::script::Instruction;
-use bitcoin::{Script, Transaction};
+mod envelope;
 
-use crate::error::InscriptionParseError;
-use crate::{Inscription, OrdError, OrdResult};
+use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
+use bitcoin::Transaction;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-pub struct OrdParser;
+use self::envelope::ParsedEnvelope;
+use crate::wallet::RedeemScriptPubkey;
+use crate::{Brc20, Inscription, InscriptionId, InscriptionParseError, Nft, OrdError, OrdResult};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ScriptParseState {
-    Signature,
-    Checksig,
-    Zero,
-    If,
-    Ord,
-    One,
-    ContentType,
-    Zero2,
-    Data,
-    Endif,
-}
-
-impl ScriptParseState {
-    fn begin() -> Self {
-        Self::Signature
-    }
-
-    fn next(&self) -> Self {
-        match self {
-            Self::Signature => Self::Checksig,
-            Self::Checksig => Self::Zero,
-            Self::Zero => Self::If,
-            Self::If => Self::Ord,
-            Self::Ord => Self::One,
-            Self::One => Self::ContentType,
-            Self::ContentType => Self::Zero2,
-            Self::Zero2 => Self::Data,
-            Self::Data => Self::Endif,
-            Self::Endif => Self::Signature,
-        }
-    }
-
-    fn validate(&self, instruction: &Instruction) -> bool {
-        match (self, instruction) {
-            (Self::Signature, Instruction::PushBytes(data))
-                if data.len() == 32 || data.len() == 33 =>
-            {
-                true
-            }
-            (Self::Checksig, Instruction::Op(all_opcodes::OP_CHECKSIG)) => true,
-            (Self::Zero | Self::Zero2, Instruction::PushBytes(data)) if data.is_empty() => true,
-            (Self::If, Instruction::Op(all_opcodes::OP_IF)) => true,
-            (Self::Ord, Instruction::PushBytes(data)) if data.as_bytes() == b"ord" => true,
-            (Self::One, Instruction::PushBytes(data)) if data.as_bytes() == b"\x01" => true,
-            (Self::ContentType | Self::Data, Instruction::PushBytes(_)) => true,
-            (Self::Endif, Instruction::Op(all_opcodes::OP_ENDIF)) => true,
-            _ => false,
-        }
-    }
+/// Encapsulates inscription parsing logic for both Ordinals and BRC20s.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum OrdParser {
+    /// Denotes a parsed [Nft] inscription.
+    Ordinal(Nft),
+    /// Denotes a parsed [Brc20] inscription.
+    Brc20(Brc20),
 }
 
 impl OrdParser {
-    pub fn parse<T>(tx: &Transaction) -> OrdResult<Option<T>>
-    where
-        T: Inscription,
-    {
-        let mut err = None;
-        for input in tx.input.iter() {
-            // otherwise try to decode witness script
-            for script in input.witness.iter() {
-                let script = Script::from_bytes(script);
-                match Self::decode_script(script) {
-                    Ok(Some(inscription)) => return Ok(Some(inscription)),
-                    Ok(None) => continue,
-                    Err(e) => {
-                        err = Some(e);
-                    }
+    /// Parses all inscriptions from a given transaction and categorizes them as either `Self::Brc20` or `Self::Ordinal`.
+    ///
+    /// This function extracts all inscription data from the transaction, attempts to parse each inscription,
+    /// and returns a vector of categorized inscriptions with their corresponding IDs.
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if any inscription data cannot be parsed correctly,
+    /// or if no valid inscriptions are found in the transaction.
+    pub fn parse_all(tx: &Transaction) -> OrdResult<Vec<(InscriptionId, Self)>> {
+        let txid = tx.txid();
+
+        ParsedEnvelope::from_transaction(tx)
+            .into_iter()
+            .map(|envelope| {
+                let inscription_id = InscriptionId {
+                    txid,
+                    index: envelope.input,
+                };
+
+                envelope
+                    .payload
+                    .body
+                    .ok_or_else(|| {
+                        OrdError::InscriptionParser(InscriptionParseError::ParsedEnvelope(
+                            "Empty payload body in envelope".to_string(),
+                        ))
+                    })
+                    .and_then(|raw_data| {
+                        let parsed_data = Self::categorize(&raw_data)?;
+                        Ok((inscription_id, parsed_data))
+                    })
+            })
+            .collect()
+    }
+
+    /// Parses a single inscription from a transaction at a specified index, returning the
+    /// parsed inscription along with its ID.
+    ///
+    /// This method specifically targets one inscription identified by its index within the transaction's inputs.
+    /// It extracts the inscription data, attempts to parse it, and categorizes it as either `Self::Brc20` or `Self::Ordinal`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the inscription data at the specified index cannot be parsed,
+    /// if there is no data at the specified index, or if the data at the index does not contain a valid payload.
+    pub fn parse_one(tx: &Transaction, index: usize) -> OrdResult<(InscriptionId, Self)> {
+        let envelope = ParsedEnvelope::from_transaction_input(tx, index).ok_or_else(|| {
+            OrdError::InscriptionParser(InscriptionParseError::ParsedEnvelope(
+                "No data found in envelope at specified index".to_string(),
+            ))
+        })?;
+
+        let raw_data = envelope.payload.body.ok_or_else(|| {
+            OrdError::InscriptionParser(InscriptionParseError::ParsedEnvelope(
+                "Empty payload body in envelope".to_string(),
+            ))
+        })?;
+
+        let inscription = Self::categorize(&raw_data)?;
+
+        let inscription_id = InscriptionId {
+            txid: tx.txid(),
+            index: envelope.input,
+        };
+
+        Ok((inscription_id, inscription))
+    }
+
+    fn categorize(raw_inscription: &[u8]) -> OrdResult<Self> {
+        match serde_json::from_slice::<Value>(raw_inscription) {
+            Ok(value) => {
+                if value.get("p").is_some()
+                    && value.get("op").is_some()
+                    && value.get("tick").is_some()
+                {
+                    let brc20: Brc20 = serde_json::from_value(value).map_err(OrdError::Codec)?;
+                    Ok(Self::Brc20(brc20))
+                } else {
+                    let nft: Nft = serde_json::from_value(value).map_err(OrdError::Codec)?;
+                    Ok(Self::Ordinal(nft))
                 }
             }
+            Err(err) => Err(OrdError::Codec(err)),
         }
+    }
+}
 
-        match err {
-            Some(err) => Err(err),
-            None => Ok(None),
+impl From<Brc20> for OrdParser {
+    fn from(inscription: Brc20) -> Self {
+        Self::Brc20(inscription)
+    }
+}
+
+impl From<Nft> for OrdParser {
+    fn from(inscription: Nft) -> Self {
+        Self::Ordinal(inscription)
+    }
+}
+
+impl TryFrom<OrdParser> for Nft {
+    type Error = OrdError;
+
+    fn try_from(parser: OrdParser) -> Result<Self, Self::Error> {
+        match parser {
+            OrdParser::Ordinal(nft) => Ok(nft),
+            _ => Err(OrdError::InscriptionParser(
+                InscriptionParseError::NotOrdinal,
+            )),
+        }
+    }
+}
+
+impl TryFrom<&OrdParser> for Nft {
+    type Error = OrdError;
+
+    fn try_from(parser: &OrdParser) -> Result<Self, Self::Error> {
+        match parser {
+            OrdParser::Ordinal(nft) => Ok(nft.clone()),
+            _ => Err(OrdError::InscriptionParser(
+                InscriptionParseError::NotOrdinal,
+            )),
+        }
+    }
+}
+
+impl TryFrom<OrdParser> for Brc20 {
+    type Error = OrdError;
+
+    fn try_from(parser: OrdParser) -> Result<Self, Self::Error> {
+        match parser {
+            OrdParser::Brc20(brc20) => Ok(brc20),
+            _ => Err(OrdError::InscriptionParser(InscriptionParseError::NotBrc20)),
+        }
+    }
+}
+
+impl TryFrom<&OrdParser> for Brc20 {
+    type Error = OrdError;
+
+    fn try_from(parser: &OrdParser) -> Result<Self, Self::Error> {
+        match parser {
+            OrdParser::Brc20(brc20) => Ok(brc20.clone()),
+            _ => Err(OrdError::InscriptionParser(InscriptionParseError::NotBrc20)),
+        }
+    }
+}
+
+impl Inscription for OrdParser {
+    fn content_type(&self) -> String {
+        match self {
+            Self::Brc20(inscription) => inscription.content_type(),
+            Self::Ordinal(inscription) => Inscription::content_type(inscription),
         }
     }
 
-    fn decode_script<T>(script: &Script) -> OrdResult<Option<T>>
-    where
-        T: Inscription,
-    {
-        let mut parse_state = ScriptParseState::begin();
-        // iterate over script instructions
-        for instruction in script.instructions() {
-            let instruction = match instruction {
-                Ok(i) => i,
-                Err(e) => return Err(e.into()),
-            };
-
-            // validate data
-            if !parse_state.validate(&instruction) {
-                return Err(if instruction.opcode().is_some() {
-                    OrdError::InscriptionParser(InscriptionParseError::UnexpectedOpcode)
-                } else {
-                    OrdError::InscriptionParser(InscriptionParseError::UnexpectedPushBytes)
-                });
-            }
-
-            // check current state
-            if parse_state == ScriptParseState::Data {
-                let data = match instruction.push_bytes() {
-                    Some(data) => data,
-                    None => {
-                        return Err(OrdError::InscriptionParser(
-                            InscriptionParseError::UnexpectedOpcode,
-                        ))
-                    }
-                };
-                // parse data
-                return Ok(Some(T::parse(data.as_bytes())?));
-            }
-
-            // update state to next
-            parse_state = parse_state.next();
+    fn data(&self) -> OrdResult<PushBytesBuf> {
+        match self {
+            Self::Brc20(inscription) => inscription.data(),
+            Self::Ordinal(inscription) => inscription.data(),
         }
+    }
 
-        Ok(None)
+    fn generate_redeem_script(
+        &self,
+        builder: ScriptBuilder,
+        pubkey: RedeemScriptPubkey,
+    ) -> OrdResult<ScriptBuilder> {
+        match self {
+            Self::Brc20(inscription) => inscription.generate_redeem_script(builder, pubkey),
+            Self::Ordinal(inscription) => inscription.generate_redeem_script(builder, pubkey),
+        }
     }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+    use bitcoin::absolute::LockTime;
+    use bitcoin::script::{Builder as ScriptBuilder, PushBytes};
+    use bitcoin::transaction::Version;
+    use bitcoin::{opcodes, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Witness};
 
     use super::*;
-    use crate::inscription::brc20::Brc20;
+    use crate::inscription::nft::create_nft;
     use crate::utils::test_utils::get_transaction_by_id;
 
+    /// Takes a list of inscription data, attempts to parse them, and
+    /// categorize each of them as either `Self::Brc20` or `Self::Ordinal`.
+    ///
+    /// Returns a list of parsed inscription data, or an error if deserialization fails.
+    fn from_raw(raw_inscriptions: Vec<Vec<u8>>) -> OrdResult<Vec<OrdParser>> {
+        raw_inscriptions
+            .into_iter()
+            .map(|inscription| OrdParser::categorize(&inscription))
+            .collect()
+    }
+
     #[tokio::test]
-    async fn test_should_parse_inscription_brc20_p2tr() {
+    async fn ord_parser_should_parse_one() {
         let transaction = get_transaction_by_id(
-            "ff314aebaa91a3f10cfba576d3be958127aba982d29146735e612869567e7808",
-            bitcoin::Network::Testnet,
+            "b61b0172d95e266c18aea0c624db987e971a5d6d4ebc2aaed85da4642d635735",
+            Network::Bitcoin,
         )
         .await
         .unwrap();
 
-        let inscription: Brc20 = OrdParser::parse(&transaction).unwrap().unwrap();
-        assert_eq!(inscription, Brc20::transfer("mona", 100));
+        let (inscription_id, parsed_inscription) = OrdParser::parse_one(&transaction, 0).unwrap();
+
+        assert_eq!(inscription_id.index, 0);
+        assert_eq!(inscription_id.txid, transaction.txid());
+
+        let brc20 = Brc20::try_from(parsed_inscription).unwrap();
+        assert_eq!(
+            brc20,
+            Brc20::deploy("ordi", 21000000, Some(1000), None, None)
+        );
     }
 
     #[tokio::test]
-    async fn test_should_parse_inscription_brc20_p2wsh() {
+    async fn ord_parser_should_parse_valid_brc20_inscription_mainnet() {
         let transaction = get_transaction_by_id(
-            "c769750df54ee38fe2bae876dbf1632c779c3af780958a19cee1ca0497c78e80",
-            bitcoin::Network::Testnet,
+            "b61b0172d95e266c18aea0c624db987e971a5d6d4ebc2aaed85da4642d635735",
+            Network::Bitcoin,
         )
         .await
         .unwrap();
 
-        let inscription: Brc20 = OrdParser::parse(&transaction).unwrap().unwrap();
-        assert_eq!(inscription, Brc20::transfer("mona", 100));
+        let parsed_data = OrdParser::parse_all(&transaction).unwrap();
+        let (parsed_brc20, brc20_iid) = (&parsed_data[0].1, parsed_data[0].0);
+
+        assert_eq!(brc20_iid.txid, transaction.txid());
+        assert_eq!(brc20_iid.index, 0);
+
+        let brc20 = Brc20::try_from(parsed_brc20).unwrap();
+        assert_eq!(
+            brc20,
+            Brc20::deploy("ordi", 21000000, Some(1000), None, None)
+        );
     }
 
     #[tokio::test]
-    async fn test_should_not_parse_a_non_inscription() {
+    async fn ord_parser_should_not_parse_a_non_brc20_inscription_mainnet() {
         let transaction = get_transaction_by_id(
             "37777defed8717c581b4c0509329550e344bdc14ac38f71fc050096887e535c8",
             bitcoin::Network::Bitcoin,
@@ -171,7 +268,246 @@ mod test {
         .await
         .unwrap();
 
-        let decode_result: OrdResult<Option<Brc20>> = OrdParser::parse(&transaction);
-        assert!(decode_result.is_err());
+        assert!(OrdParser::parse_all(&transaction).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn ord_parser_should_not_parse_a_non_brc20_inscription_testnet() {
+        let transaction = get_transaction_by_id(
+            "5b8ee749df4a3cfc37344892a97f1819fac80fb2432289a474dc0f0fd3711208",
+            bitcoin::Network::Testnet,
+        )
+        .await
+        .unwrap();
+
+        assert!(OrdParser::parse_all(&transaction).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ord_parser_should_return_a_valid_brc20_from_raw_transaction_data() {
+        let brc20 = br#"{
+            "p": "brc-20",
+            "op": "deploy",
+            "tick": "kobp",
+            "max": "1000",
+            "lim": "10",
+            "dec": "8",
+            "self_mint": "true"
+        }"#;
+
+        let script = ScriptBuilder::new()
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(brc20.as_slice().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script();
+
+        let witnesses = &[Witness::from_slice(&[script.into_bytes(), Vec::new()])];
+
+        let transaction = Transaction {
+            version: Version::ONE,
+            lock_time: LockTime::ZERO,
+            input: witnesses
+                .iter()
+                .map(|witness| TxIn {
+                    previous_output: OutPoint::null(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: witness.clone(),
+                })
+                .collect(),
+            output: Vec::new(),
+        };
+
+        let parsed_data = OrdParser::parse_all(&transaction).unwrap();
+        let (parsed_brc20, brc20_iid) = (&parsed_data[0].1, parsed_data[0].0);
+
+        assert_eq!(brc20_iid.txid, transaction.txid());
+        assert_eq!(brc20_iid.index, 0);
+
+        let brc20 = Brc20::try_from(parsed_brc20).unwrap();
+
+        assert_eq!(
+            brc20,
+            Brc20::deploy("kobp", 1000, Some(10), Some(8), Some(true))
+        );
+    }
+
+    #[test]
+    fn ord_parser_should_parse_valid_multiple_inscriptions_from_a_single_input_witness() {
+        let brc20 = br#"{
+            "p": "brc-20",
+            "op": "deploy",
+            "tick": "kobp",
+            "max": "1000",
+            "lim": "10",
+            "dec": "8",
+            "self_mint": "true"
+        }"#;
+        let ordinal = create_nft("text/plain", "Hello, world!").encode().unwrap();
+
+        let script = ScriptBuilder::new()
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(brc20.as_slice().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(ordinal.as_bytes().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script();
+
+        let witnesses = &[Witness::from_slice(&[script.into_bytes(), Vec::new()])];
+
+        let transaction = Transaction {
+            version: Version::ONE,
+            lock_time: LockTime::ZERO,
+            input: witnesses
+                .iter()
+                .map(|witness| TxIn {
+                    previous_output: OutPoint::null(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: witness.clone(),
+                })
+                .collect(),
+            output: Vec::new(),
+        };
+
+        let parsed_data = OrdParser::parse_all(&transaction).unwrap();
+
+        let (parsed_brc20, brc20_iid) = (&parsed_data[0].1, parsed_data[0].0);
+        assert_eq!(brc20_iid.txid, transaction.txid());
+        assert_eq!(brc20_iid.index, 0);
+
+        assert_eq!(
+            Brc20::try_from(parsed_brc20).unwrap(),
+            Brc20::deploy("kobp", 1000, Some(10), Some(8), Some(true))
+        );
+
+        let (parsed_nft, nft_iid) = (&parsed_data[1].1, parsed_data[1].0);
+        assert_eq!(nft_iid.txid, transaction.txid());
+        assert_eq!(nft_iid.index, 0);
+
+        let nft = Nft::try_from(parsed_nft).unwrap();
+        assert_eq!(nft, create_nft("text/plain", "Hello, world!"));
+    }
+
+    #[test]
+    fn ord_parser_should_parse_different_valid_inscription_types_from_raw_bytes() {
+        let brc20_data = br#"{
+            "p": "brc-20",
+            "op": "deploy",
+            "tick": "ordi",
+            "max": "21000000",
+            "lim": "1000",
+            "dec": "8",
+            "self_mint": "false"
+        }"#;
+        let ordinal_data = create_nft("text/plain", "Hello, world!").encode().unwrap();
+
+        let inscriptions = vec![ordinal_data.as_bytes().to_vec(), brc20_data.to_vec()];
+        let parsed_inscriptions = from_raw(inscriptions.clone()).unwrap();
+
+        let nft = create_nft("text/plain", "Hello, world!");
+        assert_eq!(
+            nft,
+            Nft::try_from(parsed_inscriptions.clone()[0].clone()).unwrap()
+        );
+
+        let brc20 = Brc20::deploy("ordi", 21000000, Some(1000), Some(8), Some(false));
+        assert_eq!(
+            brc20,
+            Brc20::try_from(parsed_inscriptions[1].clone()).unwrap()
+        );
+    }
+
+    #[test]
+    fn ord_parser_should_parse_valid_multiple_inscriptions_from_multiple_input_witnesses() {
+        let brc20 = br#"{
+        "p": "brc-20",
+        "op": "deploy",
+        "tick": "kobp",
+        "max": "1000",
+        "lim": "10",
+        "dec": "8",
+        "self_mint": "true"
+    }"#;
+        let ordinal = create_nft("text/plain", "Hello, world!").encode().unwrap();
+
+        let brc20_script = ScriptBuilder::new()
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(brc20.as_slice().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script();
+
+        let nft_script = ScriptBuilder::new()
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(b"ord")
+            .push_slice([1])
+            .push_slice(b"text/plain;charset=utf-8")
+            .push_slice([])
+            .push_slice::<&PushBytes>(ordinal.as_bytes().try_into().unwrap())
+            .push_opcode(opcodes::all::OP_ENDIF)
+            .into_script();
+
+        let brc20_witness = Witness::from_slice(&[brc20_script.into_bytes(), Vec::new()]);
+        let nft_witness = Witness::from_slice(&[nft_script.into_bytes(), Vec::new()]);
+
+        let transaction = Transaction {
+            version: Version::ONE,
+            lock_time: LockTime::ZERO,
+            input: vec![
+                TxIn {
+                    previous_output: OutPoint::null(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: brc20_witness,
+                },
+                TxIn {
+                    previous_output: OutPoint::null(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: nft_witness,
+                },
+            ],
+            output: Vec::new(),
+        };
+
+        let parsed_data = OrdParser::parse_all(&transaction).unwrap();
+
+        let (brc20_iid, parsed_brc20) = (&parsed_data[0].0, &parsed_data[0].1);
+        assert_eq!(brc20_iid.txid, transaction.txid());
+        assert_eq!(brc20_iid.index, 0);
+        assert_eq!(
+            Brc20::try_from(parsed_brc20).unwrap(),
+            Brc20::deploy("kobp", 1000, Some(10), Some(8), Some(true))
+        );
+
+        let (nft_iid, parsed_nft) = (&parsed_data[1].0, &parsed_data[1].1);
+        assert_eq!(nft_iid.txid, transaction.txid());
+        assert_eq!(nft_iid.index, 1);
+        assert_eq!(
+            Nft::try_from(parsed_nft).unwrap(),
+            create_nft("text/plain", "Hello, world!")
+        );
     }
 }

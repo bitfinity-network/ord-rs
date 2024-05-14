@@ -89,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
         network,
         CreateCommitTransactionArgsV2 {
             inputs: inputs.clone(),
-            inscription: Brc20::deploy(ticker, amount, Some(limit), None),
+            inscription: Brc20::deploy(ticker, amount, Some(limit), None, None),
             txin_script_pubkey: sender_address.script_pubkey(),
             leftovers_recipient: sender_address.clone(),
             commit_fee,

@@ -1,3 +1,13 @@
+//! An implementation of the [BRC20 Token Standard](https://domo-2.gitbook.io/brc-20-experiment),
+//! an experiment to see if [Ordinal Theory](https://docs.ordinals.com/) can facilitate fungibility on Bitcoin.
+//!
+//! 1. Deployments initialize the BRC-20. Do not affect state.
+//! 2. Mints provide a balance to only the first owner of the mint function inscription.
+//! 3. Transfers deduct from the sender's balance and add to the receiver's balance,
+//! only upon the first transfer of the transfer function. That is,
+//! - step 1. Sender inscribes the transfer function to sender's (own) address.
+//! - step 2. Sender transfers transfer function to final destination address.
+
 use std::str::FromStr;
 
 use bitcoin::opcodes::all::{OP_CHECKSIG, OP_ENDIF, OP_IF};
@@ -7,11 +17,11 @@ use serde_with::{serde_as, DisplayFromStr};
 
 use crate::utils::push_bytes::bytes_to_push_bytes;
 use crate::wallet::RedeemScriptPubkey;
-use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
+use crate::{Inscription, OrdError, OrdResult};
 
 const PROTOCOL: &str = "brc-20";
 
-/// BRC-20 operation
+/// Represents a BRC-20 operation: (Deploy, Mint, Transfer)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op")]
 pub enum Brc20 {
@@ -28,13 +38,20 @@ pub enum Brc20 {
 
 impl Brc20 {
     /// Create a new BRC-20 deploy operation
-    pub fn deploy(tick: impl ToString, max: u64, lim: Option<u64>, dec: Option<u64>) -> Self {
+    pub fn deploy(
+        tick: impl ToString,
+        max: u64,
+        lim: Option<u64>,
+        dec: Option<u64>,
+        self_mint: Option<bool>,
+    ) -> Self {
         Self::Deploy(Brc20Deploy {
             protocol: PROTOCOL.to_string(),
             tick: tick.to_string(),
             max,
             lim,
             dec,
+            self_mint,
         })
     }
 
@@ -101,51 +118,59 @@ impl Inscription for Brc20 {
     fn data(&self) -> OrdResult<PushBytesBuf> {
         bytes_to_push_bytes(self.encode()?.as_bytes())
     }
-
-    fn parse(data: &[u8]) -> OrdResult<Self>
-    where
-        Self: Sized,
-    {
-        let s = String::from_utf8(data.to_vec())
-            .map_err(|_| OrdError::InscriptionParser(InscriptionParseError::BadDataSyntax))?;
-        let inscription = serde_json::from_str(&s).map_err(OrdError::from)?;
-
-        Ok(inscription)
-    }
 }
 
+/// `deploy` op
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Brc20Deploy {
+    /// Protocol (required): Helps other systems identify and process brc-20 events
     #[serde(rename = "p")]
     protocol: String,
+    /// Ticker (required): 4 or 5 letter identifier of the brc-20
     pub tick: String,
+    /// Max supply (required): Set max supply of the brc-20
     #[serde_as(as = "DisplayFromStr")]
     pub max: u64,
+    /// Mint limit (optional): If letting users mint to themsleves, limit per ordinal
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub lim: Option<u64>,
+    /// Decimals (optional): Set decimal precision, default to 18
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub dec: Option<u64>,
+    /// Self mint (optional): Set the ticker to be mintable only by the deployment holder
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub self_mint: Option<bool>,
 }
 
+/// `mint` op
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Brc20Mint {
+    /// Protocol (required): Helps other systems identify and process brc-20 events
     #[serde(rename = "p")]
     protocol: String,
+    /// Ticker (required): 4 or 5 letter identifier of the brc-20
     pub tick: String,
+    /// Amount to mint (required): States the amount of the brc-20 to mint.
+    /// Has to be less than "lim" of the `deploy` op if stated.
     #[serde_as(as = "DisplayFromStr")]
     pub amt: u64,
 }
 
+/// `transfer` op
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Brc20Transfer {
+    /// Protocol (required): Helps other systems identify and process brc-20 events
     #[serde(rename = "p")]
     protocol: String,
+    /// Ticker (required): 4 or 5 letter identifier of the brc-20
     pub tick: String,
+    /// Amount to transfer (required): States the amount of the brc-20 to transfer.
     #[serde_as(as = "DisplayFromStr")]
     pub amt: u64,
 }
@@ -165,7 +190,8 @@ mod test {
                 "tick": "ordi",
                 "max": "21000000",
                 "lim": "1000",
-                "dec": "8"
+                "dec": "8",
+                "self_mint": "false"
               }
             "#,
         )
@@ -178,7 +204,8 @@ mod test {
                 tick: "ordi".to_string(),
                 max: 21000000,
                 lim: Some(1000),
-                dec: Some(8)
+                dec: Some(8),
+                self_mint: Some(false)
             })
         );
 
@@ -201,7 +228,8 @@ mod test {
                 tick: "ordi".to_string(),
                 max: 21000000,
                 lim: None,
-                dec: None
+                dec: None,
+                self_mint: None,
             })
         );
     }
