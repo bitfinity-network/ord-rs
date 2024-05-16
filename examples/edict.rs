@@ -9,7 +9,7 @@ use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Amount, FeeRate, Network, OutPoint, PrivateKey, TxOut};
 use log::debug;
 use ord_rs::wallet::{CreateEdictTxArgs, LocalSigner, ScriptType, TxInputInfo};
-use ord_rs::{BtcTxSigner, OrdTransactionBuilder, Wallet};
+use ord_rs::{OrdTransactionBuilder, Wallet};
 use ordinals::RuneId;
 
 #[derive(FromArgs, Debug)]

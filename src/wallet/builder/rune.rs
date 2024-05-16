@@ -140,7 +140,7 @@ mod tests {
 
     use super::*;
     use crate::wallet::LocalSigner;
-    use crate::{BtcTxSigner, Wallet};
+    use crate::Wallet;
 
     #[tokio::test]
     async fn create_edict_transaction() {
