@@ -1,12 +1,13 @@
+use bitcoin::bip32::{ChainCode, DerivationPath, Xpriv};
 use bitcoin::hashes::Hash as _;
-use bitcoin::key::{Secp256k1, UntweakedKeypair};
+use bitcoin::key::Secp256k1;
 use bitcoin::secp256k1::ecdsa::Signature;
-use bitcoin::secp256k1::{self, All, Message};
+use bitcoin::secp256k1::{self, All, Error, Message};
 use bitcoin::sighash::{Prevouts, SighashCache};
 use bitcoin::taproot::{ControlBlock, LeafVersion};
 use bitcoin::{
-    PrivateKey, PublicKey, ScriptBuf, SegwitV0Sighash, TapLeafHash, TapSighashType, Transaction,
-    TxOut, Witness,
+    Network, PrivateKey, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, Transaction, TxOut,
+    Witness,
 };
 
 use super::super::builder::Utxo;
@@ -16,37 +17,98 @@ use crate::{OrdError, OrdResult};
 
 /// An abstraction over a transaction signer.
 #[async_trait::async_trait]
-pub trait ExternalSigner {
+pub trait BtcTxSigner {
     /// Retrieves the ECDSA public key at the given derivation path.
-    async fn ecdsa_public_key(&self) -> String;
+    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> PublicKey;
 
     /// Signs a message with an ECDSA key and returns the signature.
-    async fn sign_with_ecdsa(&self, message: &str) -> String;
+    async fn sign_with_ecdsa(
+        &self,
+        message: Message,
+        derivation_path: &DerivationPath,
+    ) -> Result<Signature, secp256k1::Error>;
 
-    /// Verifies an ECDSA signature against a message and a public key.
-    async fn verify_ecdsa(&self, signature_hex: &str, message: &str, public_key_hex: &str) -> bool;
+    async fn sign_with_schnorr(
+        &self,
+        message: Message,
+        derivation_path: &DerivationPath,
+    ) -> Result<secp256k1::schnorr::Signature, secp256k1::Error>;
 }
 
-/// Types of signers.
-pub enum WalletType {
-    Local {
-        private_key: PrivateKey,
-    },
-    External {
-        signer: Box<dyn ExternalSigner + Send + Sync>,
-    },
+pub struct LocalSigner {
+    master_key: Xpriv,
+    secp: Secp256k1<All>,
+}
+
+impl LocalSigner {
+    fn chain_code() -> ChainCode {
+        ChainCode::from([0; 32])
+    }
+
+    pub fn new(private_key: PrivateKey) -> Self {
+        // Network is only used for encoding and decoding the private key and is not important for
+        // signing. So we can use any value here.
+        let network = Network::Bitcoin;
+        Self {
+            master_key: Xpriv {
+                network,
+                depth: 0,
+                parent_fingerprint: Default::default(),
+                child_number: 0.into(),
+                private_key: private_key.inner,
+                chain_code: Self::chain_code(),
+            },
+            secp: Secp256k1::new(),
+        }
+    }
+
+    fn derived(&self, derivation_path: &DerivationPath) -> Xpriv {
+        // Even though API for key derivation returns `Result` there is no actual code path
+        // that can return an error. So we can expect this operation to succeed.
+        self.master_key
+            .derive_priv(&self.secp, derivation_path)
+            .expect("key derivation cannot fail")
+    }
+}
+
+#[async_trait::async_trait]
+impl BtcTxSigner for LocalSigner {
+    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> PublicKey {
+        let child = self.derived(derivation_path);
+        let key_pair = child.to_keypair(&self.secp);
+        key_pair.public_key().into()
+    }
+
+    async fn sign_with_ecdsa(
+        &self,
+        message: Message,
+        derivation_path: &DerivationPath,
+    ) -> Result<Signature, secp256k1::Error> {
+        let private_key = self.derived(derivation_path);
+        Ok(self.secp.sign_ecdsa(&message, &private_key.private_key))
+    }
+
+    async fn sign_with_schnorr(
+        &self,
+        message: Message,
+        derivation_path: &DerivationPath,
+    ) -> Result<secp256k1::schnorr::Signature, Error> {
+        let keypair = self.derived(derivation_path).to_keypair(&self.secp);
+        let signature = self.secp.sign_schnorr_no_aux_rand(&message, &keypair);
+        Ok(signature)
+    }
 }
 
 /// An Ordinal-aware Bitcoin wallet.
 pub struct Wallet {
-    pub signer: WalletType,
+    pub signer: Box<dyn BtcTxSigner>,
     secp: Secp256k1<All>,
 }
 
 impl Wallet {
-    pub fn new_with_signer(signer: WalletType) -> Self {
+    pub fn new_with_signer(signer: impl BtcTxSigner + 'static) -> Self {
         Self {
-            signer,
+            signer: Box::new(signer),
             secp: Secp256k1::new(),
         }
     }
@@ -127,7 +189,7 @@ impl Wallet {
         Ok(sighash_cache.into_transaction())
     }
 
-    fn sign_tr(
+    async fn sign_tr(
         &self,
         prev_outs: &[&TxOut],
         index: usize,
@@ -140,24 +202,17 @@ impl Wallet {
             TapSighashType::Default,
         )?;
 
-        let keypair = match self.signer {
-            WalletType::Local { private_key } => {
-                UntweakedKeypair::from_secret_key(&self.secp, &private_key.inner)
-            }
-            WalletType::External { .. } => return Err(OrdError::TaprootCompute),
-        };
         let msg = Message::from(sighash);
-        let signature = self.secp.sign_schnorr_no_aux_rand(&msg, &keypair);
+        let signature = self
+            .signer
+            .sign_with_schnorr(msg, &DerivationPath::default())
+            .await?;
 
-        // verify
-        self.secp
-            .verify_schnorr(&signature, &msg, &keypair.x_only_public_key().0)?;
-
-        // append witness
         let signature = bitcoin::taproot::Signature {
             sig: signature,
             hash_ty: TapSighashType::Default,
         };
+
         let mut witness = Witness::new();
         witness.push(&signature.to_vec());
 
@@ -175,7 +230,6 @@ impl Wallet {
         &self,
         transaction: &Transaction,
         prev_outs: &[TxInputInfo],
-        own_pubkey: &PublicKey,
     ) -> OrdResult<Transaction> {
         if transaction.input.len() != prev_outs.len() {
             return Err(OrdError::InvalidInputs);
@@ -191,24 +245,32 @@ impl Wallet {
                         input.tx_out.value,
                         bitcoin::EcdsaSighashType::All,
                     )?;
+                    let message = Message::from(sighash);
 
-                    let signature = self.sign_msg_hash(sighash, own_pubkey).await?;
+                    let signature = self
+                        .signer
+                        .sign_with_ecdsa(message, &input.derivation_path)
+                        .await?;
+                    let public_key = self.signer.ecdsa_public_key(&input.derivation_path).await;
                     let ord_signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
 
                     self.append_witness_to_input(
                         &mut cache,
                         ord_signature,
                         index,
-                        &own_pubkey.inner,
+                        &public_key.inner,
                         None,
                         None,
                     )?;
                 }
-                s if s.is_p2tr() => self.sign_tr(
-                    &prev_outs.iter().map(|v| &v.tx_out).collect::<Vec<_>>(),
-                    index,
-                    &mut cache,
-                )?,
+                s if s.is_p2tr() => {
+                    self.sign_tr(
+                        &prev_outs.iter().map(|v| &v.tx_out).collect::<Vec<_>>(),
+                        index,
+                        &mut cache,
+                    )
+                    .await?
+                }
                 _ => return Err(OrdError::InvalidScriptType),
             }
         }
@@ -241,7 +303,11 @@ impl Wallet {
                 )?,
             };
 
-            let signature = self.sign_msg_hash(sighash, own_pubkey).await?;
+            let message = Message::from(sighash);
+            let signature = self
+                .signer
+                .sign_with_ecdsa(message, &DerivationPath::default())
+                .await?;
 
             // append witness
             let signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
@@ -270,46 +336,6 @@ impl Wallet {
         }
 
         Ok(hash.into_transaction())
-    }
-
-    async fn sign_msg_hash(
-        &self,
-        sighash: SegwitV0Sighash,
-        own_pubkey: &PublicKey,
-    ) -> OrdResult<Signature> {
-        debug!("Signing transaction and verifying signature");
-        let signature = match &self.signer {
-            WalletType::External { signer } => {
-                let msg_hex = hex::encode(sighash);
-                // sign
-                let sig_hex = signer.sign_with_ecdsa(&msg_hex).await;
-                let signature = Signature::from_compact(&hex::decode(&sig_hex)?)?;
-
-                // verify
-                if !signer
-                    .verify_ecdsa(&sig_hex, &msg_hex, &own_pubkey.to_string())
-                    .await
-                {
-                    return Err(OrdError::UnexpectedSignature);
-                }
-
-                signature
-            }
-            WalletType::Local { private_key } => {
-                let message = secp256k1::Message::from_digest(sighash.to_byte_array());
-
-                // sign
-                let signature = self.secp.sign_ecdsa(&message, &private_key.inner);
-                // verify
-                self.secp
-                    .verify_ecdsa(&message, &signature, &own_pubkey.inner)?;
-                signature
-            }
-        };
-
-        debug!("signature: {}", signature.serialize_der());
-
-        Ok(signature)
     }
 
     fn append_witness_to_input(

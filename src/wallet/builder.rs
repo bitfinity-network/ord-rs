@@ -1,4 +1,5 @@
 use bitcoin::absolute::LockTime;
+use bitcoin::bip32::DerivationPath;
 use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use bitcoin::transaction::Version;
 use bitcoin::{
@@ -16,6 +17,7 @@ use crate::{OrdError, OrdResult};
 
 #[cfg(feature = "rune")]
 mod rune;
+use crate::wallet::builder::signer::LocalSigner;
 #[cfg(feature = "rune")]
 pub use rune::CreateEdictTxArgs;
 
@@ -278,9 +280,7 @@ impl OrdTransactionBuilder {
         unsigned_tx: &Transaction,
         inputs: &[TxInputInfo],
     ) -> OrdResult<Transaction> {
-        self.signer
-            .sign_transaction(unsigned_tx, inputs, &self.public_key)
-            .await
+        self.signer.sign_transaction(unsigned_tx, inputs).await
     }
 
     /// Create the reveal transaction
@@ -351,20 +351,16 @@ impl OrdTransactionBuilder {
 
     /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2TR as script type (preferred).
     pub fn p2tr(private_key: bitcoin::PrivateKey) -> Self {
-        use signer::WalletType;
-
         let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
-        let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
+        let wallet = Wallet::new_with_signer(LocalSigner::new(private_key));
         Self::new(public_key, ScriptType::P2TR, wallet)
     }
 
     /// Initialize a new `OrdTransactionBuilder` with the given private key and use P2WSH as script type.
     /// P2WSH may not be supported by all the indexers, so P2TR should be preferred.
     pub fn p2wsh(private_key: bitcoin::PrivateKey) -> Self {
-        use signer::WalletType;
-
         let public_key = private_key.public_key(&secp256k1::Secp256k1::new());
-        let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
+        let wallet = Wallet::new_with_signer(LocalSigner::new(private_key));
         Self::new(public_key, ScriptType::P2WSH, wallet)
     }
 
@@ -514,8 +510,11 @@ pub struct Utxo {
 pub struct TxInputInfo {
     /// ID of the output.
     pub outpoint: OutPoint,
+
     /// Contents of the output.
     pub tx_out: TxOut,
+
+    pub derivation_path: DerivationPath,
 }
 
 #[cfg(test)]

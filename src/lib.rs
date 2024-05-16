@@ -28,9 +28,8 @@ pub use result::OrdResult;
 pub use utils::fees::{self, MultisigConfig};
 pub use utils::{constants, push_bytes};
 pub use wallet::{
-    CreateCommitTransaction, CreateCommitTransactionArgs, ExternalSigner, OrdParser,
+    BtcTxSigner, CreateCommitTransaction, CreateCommitTransactionArgs, OrdParser,
     OrdTransactionBuilder, RevealTransactionArgs, SignCommitTransactionArgs, Utxo, Wallet,
-    WalletType,
 };
 
 mod error;
