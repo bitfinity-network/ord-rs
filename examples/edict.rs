@@ -3,15 +3,14 @@ mod utils;
 use std::str::FromStr;
 
 use argh::FromArgs;
+use bitcoin::bip32::DerivationPath;
 use bitcoin::consensus::Encodable;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Amount, FeeRate, Network, OutPoint, PrivateKey, TxOut};
 use log::debug;
-use ord_rs::wallet::{CreateEdictTxArgs, ScriptType, TxInputInfo};
-use ord_rs::{OrdTransactionBuilder, Wallet, WalletType};
+use ord_rs::wallet::{CreateEdictTxArgs, LocalSigner, ScriptType, TxInputInfo};
+use ord_rs::{OrdTransactionBuilder, Wallet};
 use ordinals::RuneId;
-
-use crate::utils::Fees;
 
 #[derive(FromArgs, Debug)]
 #[argh(description = "Create and sign edict transaction")]
@@ -54,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
     let sender_address = Address::p2wpkh(&public_key, network).unwrap();
     debug!("sender address: {sender_address}");
 
-    let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
+    let wallet = Wallet::new_with_signer(LocalSigner::new(private_key));
     let builder = OrdTransactionBuilder::new(public_key, ScriptType::P2WSH, wallet);
 
     let inputs: Vec<_> = inputs
@@ -66,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
                 value: Amount::from_sat(args.input_amounts[index]),
                 script_pubkey: sender_address.script_pubkey(),
             },
+            derivation_path: DerivationPath::default(),
         })
         .collect();
 

@@ -1,7 +1,7 @@
 mod builder;
 mod parser;
 
-pub use builder::signer::{ExternalSigner, Wallet, WalletType};
+pub use builder::signer::{BtcTxSigner, LocalSigner, Wallet};
 #[cfg(feature = "rune")]
 pub use builder::CreateEdictTxArgs;
 pub use builder::{

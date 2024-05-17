@@ -133,12 +133,14 @@ mod tests {
     use std::io::Cursor;
     use std::str::FromStr;
 
+    use bitcoin::bip32::DerivationPath;
     use bitcoin::consensus::Decodable;
     use bitcoin::key::Secp256k1;
     use bitcoin::{Network, OutPoint, PrivateKey, PublicKey, Txid};
 
     use super::*;
-    use crate::{Wallet, WalletType};
+    use crate::wallet::LocalSigner;
+    use crate::Wallet;
 
     #[tokio::test]
     async fn create_edict_transaction() {
@@ -150,7 +152,7 @@ mod tests {
         )
         .expect("invalid private key");
         let public_key = PublicKey::from_private_key(&Secp256k1::new(), &private_key);
-        let wallet = Wallet::new_with_signer(WalletType::Local { private_key });
+        let wallet = Wallet::new_with_signer(LocalSigner::new(private_key));
         let builder = OrdTransactionBuilder::new(public_key, ScriptType::P2WSH, wallet);
 
         let args = CreateEdictTxArgs {
@@ -171,6 +173,7 @@ mod tests {
                         )
                         .unwrap(),
                     },
+                    derivation_path: DerivationPath::default(),
                 },
                 TxInputInfo {
                     outpoint: OutPoint::new(
@@ -187,6 +190,7 @@ mod tests {
                         )
                         .unwrap(),
                     },
+                    derivation_path: DerivationPath::default(),
                 },
                 TxInputInfo {
                     outpoint: OutPoint::new(
@@ -203,6 +207,7 @@ mod tests {
                         )
                         .unwrap(),
                     },
+                    derivation_path: DerivationPath::default(),
                 },
             ],
             destination: Address::from_str(
