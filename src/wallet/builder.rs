@@ -17,9 +17,10 @@ use crate::{OrdError, OrdResult};
 
 #[cfg(feature = "rune")]
 mod rune;
-use crate::wallet::builder::signer::LocalSigner;
 #[cfg(feature = "rune")]
 pub use rune::CreateEdictTxArgs;
+
+use crate::wallet::builder::signer::LocalSigner;
 
 pub mod signer;
 mod taproot;
