@@ -1,18 +1,15 @@
 //! NFT
-
-pub mod id;
-#[cfg(test)]
-mod nft_tests;
+//! Closely follows https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs
 
 use std::io::Cursor;
+use std::mem;
 use std::str::FromStr;
 
+use bitcoin::constants::MAX_SCRIPT_ELEMENT_SIZE;
+use bitcoin::opcodes;
 use bitcoin::opcodes::all::OP_CHECKSIG;
-use bitcoin::opcodes::{self};
-use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf, ScriptBuf};
-use http::HeaderValue;
+use bitcoin::script::{Builder as ScriptBuilder, PushBytes, PushBytesBuf, ScriptBuf};
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 
 use crate::utils::constants;
 use crate::utils::push_bytes::bytes_to_push_bytes;
@@ -28,7 +25,6 @@ use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
 /// a tag and a value.
 ///
 /// [Reference](https://docs.ordinals.com/inscriptions.html#fields)
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Nft {
     /// The main body of the NFT. This is the core data or content of the NFT,
@@ -40,9 +36,9 @@ pub struct Nft {
     /// Has a tag of 2, representing the position of the inscribed satoshi in the outputs.
     /// It is used to locate the specific satoshi that carries this inscription.
     pub pointer: Option<Vec<u8>>,
-    /// Has a tag of 3, representing the parent NFT, i.e., the owner of an NFT
+    /// Has a tag of 3, representing the parent NFTs, i.e., the owner of an NFT
     /// can create child NFTs, establishing a hierarchy or a collection of related NFTs.
-    pub parent: Option<Vec<u8>>,
+    pub parents: Vec<Vec<u8>>,
     /// Has a tag of 5, representing CBOR (Concise Binary Object Representation) metadata,
     /// stored as data pushes. This is used for storing structured metadata in a compact format.
     pub metadata: Option<Vec<u8>>,
@@ -66,6 +62,143 @@ pub struct Nft {
     /// Has a tag of 11, representing a nominated NFT. Used to delegate certain rights or
     /// attributes from one NFT to another, effectively linking them in a specified relationship.
     pub delegate: Option<Vec<u8>>,
+    /// Has a tag of 13, denoting whether or not this inscription caries any rune.
+    pub rune: Option<Vec<u8>>,
+}
+
+impl Nft {
+    /// Creates a new `Nft` with optional data.
+    pub fn new(content_type: Option<Vec<u8>>, body: Option<Vec<u8>>) -> Self {
+        Self {
+            content_type,
+            body,
+            ..Default::default()
+        }
+    }
+
+    pub fn append_reveal_script_to_builder(
+        &self,
+        mut builder: ScriptBuilder,
+    ) -> OrdResult<ScriptBuilder> {
+        builder = builder
+            .push_opcode(opcodes::OP_FALSE)
+            .push_opcode(opcodes::all::OP_IF)
+            .push_slice(constants::PROTOCOL_ID);
+
+        Self::append(
+            constants::CONTENT_TYPE_TAG,
+            &mut builder,
+            &self.content_type,
+        );
+        Self::append(
+            constants::CONTENT_ENCODING_TAG,
+            &mut builder,
+            &self.content_encoding,
+        );
+        Self::append(
+            constants::METAPROTOCOL_TAG,
+            &mut builder,
+            &self.metaprotocol,
+        );
+        Self::append_array(constants::PARENT_TAG, &mut builder, &self.parents);
+        Self::append(constants::DELEGATE_TAG, &mut builder, &self.delegate);
+        Self::append(constants::POINTER_TAG, &mut builder, &self.pointer);
+        Self::append(constants::METADATA_TAG, &mut builder, &self.metadata);
+        Self::append(constants::RUNE_TAG, &mut builder, &self.rune);
+
+        if let Some(body) = &self.body {
+            builder = builder.push_slice(constants::BODY_TAG);
+            for chunk in body.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
+                builder = builder.push_slice::<&PushBytes>(chunk.try_into().unwrap());
+            }
+        }
+
+        Ok(builder.push_opcode(opcodes::all::OP_ENDIF))
+    }
+
+    fn append(tag: [u8; 1], builder: &mut ScriptBuilder, value: &Option<Vec<u8>>) {
+        if let Some(value) = value {
+            let mut tmp = ScriptBuilder::new();
+            mem::swap(&mut tmp, builder);
+
+            if is_chunked(tag) {
+                for chunk in value.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
+                    tmp = tmp
+                        .push_slice::<&PushBytes>(tag.as_slice().try_into().unwrap())
+                        .push_slice::<&PushBytes>(chunk.try_into().unwrap());
+                }
+            } else {
+                tmp = tmp
+                    .push_slice::<&PushBytes>(tag.as_slice().try_into().unwrap())
+                    .push_slice::<&PushBytes>(value.as_slice().try_into().unwrap());
+            }
+
+            mem::swap(&mut tmp, builder);
+        }
+    }
+
+    fn append_array(tag: [u8; 1], builder: &mut ScriptBuilder, values: &Vec<Vec<u8>>) {
+        let mut tmp = ScriptBuilder::new();
+        mem::swap(&mut tmp, builder);
+
+        for value in values {
+            tmp = tmp
+                .push_slice::<&PushBytes>(tag.as_slice().try_into().unwrap())
+                .push_slice::<&PushBytes>(value.as_slice().try_into().unwrap());
+        }
+
+        mem::swap(&mut tmp, builder);
+    }
+
+    /// Validates the NFT's content type.
+    fn validate_content_type(&self) -> OrdResult<Self> {
+        if let Some(content_type) = &self.content_type {
+            let content_type_str =
+                std::str::from_utf8(content_type).map_err(OrdError::Utf8Encoding)?;
+
+            if !content_type_str.contains('/') {
+                return Err(OrdError::InscriptionParser(
+                    InscriptionParseError::ContentType,
+                ));
+            }
+        }
+
+        Ok(self.clone())
+    }
+
+    /// Creates a new `Nft` from JSON-encoded string.
+    pub fn from_json_str(data: &str) -> OrdResult<Self> {
+        Self::from_str(data)?.validate_content_type()
+    }
+
+    /// Returns `Self` as a JSON-encoded data to be pushed to the redeem script.
+    pub fn as_push_bytes(&self) -> OrdResult<PushBytesBuf> {
+        bytes_to_push_bytes(self.encode()?.as_bytes())
+    }
+
+    pub fn body(&self) -> Option<&str> {
+        std::str::from_utf8(self.body.as_ref()?).ok()
+    }
+
+    pub fn content_type(&self) -> Option<&str> {
+        std::str::from_utf8(self.content_type.as_ref()?).ok()
+    }
+
+    pub fn metadata(&self) -> Option<ciborium::Value> {
+        ciborium::from_reader(Cursor::new(self.metadata.as_ref()?)).ok()
+    }
+
+    pub fn reveal_script_as_scriptbuf(&self, builder: ScriptBuilder) -> OrdResult<ScriptBuf> {
+        Ok(self.append_reveal_script_to_builder(builder)?.into_script())
+    }
+}
+
+impl FromStr for Nft {
+    type Err = OrdError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(s).map_err(OrdError::from)
+    }
 }
 
 impl Inscription for Nft {
@@ -93,168 +226,19 @@ impl Inscription for Nft {
     fn data(&self) -> OrdResult<PushBytesBuf> {
         bytes_to_push_bytes(self.encode()?.as_bytes())
     }
-
-    fn parse(data: &[u8]) -> OrdResult<Self>
-    where
-        Self: Sized,
-    {
-        let s = String::from_utf8(data.to_vec())
-            .map_err(|_| OrdError::InscriptionParser(InscriptionParseError::BadDataSyntax))?;
-        let inscription = serde_json::from_str(&s).map_err(OrdError::from)?;
-
-        Ok(inscription)
-    }
 }
 
-impl Nft {
-    /// Creates a new `Nft` with optional data.
-    pub fn new(content_type: Option<Vec<u8>>, body: Option<Vec<u8>>) -> Self {
-        Self {
-            content_type,
-            body,
-            ..Default::default()
-        }
-    }
-
-    /// Validates the NFT's content type.
-    pub fn validate_content_type(&self) -> OrdResult<Self> {
-        if let Some(content_type) = &self.content_type {
-            let content_type_str =
-                std::str::from_utf8(content_type).map_err(OrdError::Utf8Encoding)?;
-
-            if !content_type_str.contains('/') {
-                return Err(OrdError::InscriptionParser(
-                    InscriptionParseError::ContentType,
-                ));
-            }
-        }
-
-        Ok(self.clone())
-    }
-
-    pub fn append_reveal_script_to_builder(
-        &self,
-        mut builder: ScriptBuilder,
-    ) -> OrdResult<ScriptBuilder> {
-        builder = builder
-            .push_opcode(opcodes::OP_FALSE)
-            .push_opcode(opcodes::all::OP_IF)
-            .push_slice(constants::PROTOCOL_ID);
-
-        if let Some(content_type) = self.content_type.clone() {
-            builder = builder
-                .push_slice(constants::CONTENT_TYPE_TAG)
-                .push_slice(PushBytesBuf::try_from(content_type)?);
-        }
-
-        if let Some(content_encoding) = self.content_encoding.clone() {
-            builder = builder
-                .push_slice(constants::CONTENT_ENCODING_TAG)
-                .push_slice(PushBytesBuf::try_from(content_encoding)?);
-        }
-
-        if let Some(protocol) = self.metaprotocol.clone() {
-            builder = builder
-                .push_slice(constants::METAPROTOCOL_TAG)
-                .push_slice(PushBytesBuf::try_from(protocol)?);
-        }
-
-        if let Some(parent) = self.parent.clone() {
-            builder = builder
-                .push_slice(constants::PARENT_TAG)
-                .push_slice(PushBytesBuf::try_from(parent)?);
-        }
-
-        if let Some(pointer) = self.pointer.clone() {
-            builder = builder
-                .push_slice(constants::POINTER_TAG)
-                .push_slice(PushBytesBuf::try_from(pointer)?);
-        }
-
-        if let Some(metadata) = &self.metadata {
-            for chunk in metadata.chunks(520) {
-                builder = builder.push_slice(constants::METADATA_TAG);
-                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec())?);
-            }
-        }
-
-        if let Some(body) = &self.body {
-            builder = builder.push_slice(constants::BODY_TAG);
-            for chunk in body.chunks(520) {
-                builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec())?);
-            }
-        }
-
-        Ok(builder.push_opcode(opcodes::all::OP_ENDIF))
-    }
-
-    /// Creates a new `Nft` from JSON-encoded string.
-    pub fn from_json_str(data: &str) -> OrdResult<Self> {
-        Self::from_str(data)?.validate_content_type()
-    }
-
-    /// Returns `Self` as a JSON-encoded data to be pushed to the redeem script.
-    pub fn as_push_bytes(&self) -> OrdResult<PushBytesBuf> {
-        bytes_to_push_bytes(self.encode()?.as_bytes())
-    }
-
-    pub fn body(&self) -> Option<&[u8]> {
-        Some(self.body.as_ref()?)
-    }
-
-    pub fn body_str(&self) -> Option<&str> {
-        std::str::from_utf8(self.body.as_ref()?).ok()
-    }
-
-    pub fn content_length(&self) -> Option<usize> {
-        Some(self.body()?.len())
-    }
-
-    pub fn content_type(&self) -> Option<&str> {
-        std::str::from_utf8(self.content_type.as_ref()?).ok()
-    }
-
-    pub fn content_encoding(&self) -> Option<HeaderValue> {
-        HeaderValue::from_str(
-            std::str::from_utf8(self.content_encoding.as_ref()?).unwrap_or_default(),
-        )
-        .ok()
-    }
-
-    pub fn metadata(&self) -> Option<ciborium::Value> {
-        ciborium::from_reader(Cursor::new(self.metadata.as_ref()?)).ok()
-    }
-
-    pub fn metaprotocol(&self) -> Option<&str> {
-        std::str::from_utf8(self.metaprotocol.as_ref()?).ok()
-    }
-
-    pub fn pointer_value(pointer: u64) -> Vec<u8> {
-        let mut bytes = pointer.to_le_bytes().to_vec();
-
-        while bytes.last().copied() == Some(0) {
-            bytes.pop();
-        }
-
-        bytes
-    }
-
-    pub fn reveal_script_as_scriptbuf(&self, builder: ScriptBuilder) -> OrdResult<ScriptBuf> {
-        Ok(self.append_reveal_script_to_builder(builder)?.into_script())
-    }
+fn is_chunked(tag: [u8; 1]) -> bool {
+    matches!(tag, constants::METADATA_TAG)
 }
 
-impl FromStr for Nft {
-    type Err = OrdError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s).map_err(OrdError::from)
-    }
+#[allow(unused)]
+pub(crate) fn create_nft(content_type: &str, body: impl AsRef<[u8]>) -> Nft {
+    Nft::new(Some(content_type.into()), Some(body.as_ref().into()))
 }
 
 #[cfg(test)]
 mod tests {
-    use nft_tests::create_nft;
 
     use super::*;
 
@@ -263,7 +247,7 @@ mod tests {
         let nft = create_nft("text/plain", "Hello, world!");
 
         assert_eq!(nft.content_type(), Some("text/plain"));
-        assert_eq!(nft.body_str(), Some("Hello, world!"));
+        assert_eq!(nft.body(), Some("Hello, world!"));
         assert!(nft.metadata().is_none());
     }
 
@@ -289,7 +273,7 @@ mod tests {
         let invalid_utf8 = vec![0xff, 0xfe, 0xfd];
         let nft = create_nft("text/plain", invalid_utf8);
 
-        assert!(nft.body_str().is_none());
+        assert!(nft.body().is_none());
         assert!(nft.metadata().is_none());
         assert!(nft.content_type().is_some());
     }

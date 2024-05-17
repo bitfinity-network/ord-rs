@@ -18,7 +18,6 @@ async-trait = "0.1"
 bitcoin = { version = "0.31", features = ["rand"] }
 ciborium = "0.2"
 hex = "0.4"
-http = "1"
 log = "0.4"
 ordinals = { version = "0.0.7", optional = true }
 rand = { version = "0.8" }

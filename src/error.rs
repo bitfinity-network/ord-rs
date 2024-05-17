@@ -60,4 +60,10 @@ pub enum InscriptionParseError {
     CharacterSeparator(char),
     #[error("invalid index: {0}")]
     Index(#[from] std::num::ParseIntError),
+    #[error("content of envelope: {0}")]
+    ParsedEnvelope(String),
+    #[error("cannot convert non-Ordinal inscription to Nft")]
+    NotOrdinal,
+    #[error("cannot convert non-Brc20 inscription to Brc20")]
+    NotBrc20,
 }
