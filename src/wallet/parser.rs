@@ -5,7 +5,7 @@ use bitcoin::Transaction;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use self::envelope::{Envelope, ParsedEnvelope};
+use self::envelope::ParsedEnvelope;
 use crate::wallet::RedeemScriptPubkey;
 use crate::{Brc20, Inscription, InscriptionId, InscriptionParseError, Nft, OrdError, OrdResult};
 
@@ -19,22 +19,6 @@ pub enum OrdParser {
 }
 
 impl OrdParser {
-    /// Unwraps the [Brc20] from the [OrdParser] enum.
-    pub fn unwrap_brc20(self) -> Brc20 {
-        match self {
-            Self::Brc20(brc20) => brc20,
-            _ => panic!("Expected Brc20, found Nft"),
-        }
-    }
-
-    /// Unwraps the [Nft] from the [OrdParser] enum.
-    pub fn unwrap_nft(self) -> Nft {
-        match self {
-            Self::Ordinal(nft) => nft,
-            _ => panic!("Expected Nft, found Brc20"),
-        }
-    }
-
     /// Parses all inscriptions from a given transaction and categorizes them as either `Self::Brc20` or `Self::Ordinal`.
     ///
     /// This function extracts all inscription data from the transaction, attempts to parse each inscription,
@@ -55,20 +39,21 @@ impl OrdParser {
                     index: envelope.input,
                 };
 
-                envelope
+                Ok(envelope
                     .payload
                     .body
                     .as_ref()
-                    .cloned()
                     .ok_or_else(|| {
                         OrdError::InscriptionParser(InscriptionParseError::ParsedEnvelope(
                             "Empty payload body in envelope".to_string(),
                         ))
                     })
                     .and_then(|raw_data| {
-                        let parsed_data = Self::categorize(envelope, &raw_data)?;
+                        let parsed_data = Self::categorize(raw_data)?;
                         Ok((inscription_id, parsed_data))
                     })
+                    .ok()
+                    .unwrap_or((inscription_id, OrdParser::Ordinal(envelope.payload))))
             })
             .collect()
     }
@@ -90,34 +75,39 @@ impl OrdParser {
             ))
         })?;
 
-        let index = envelope.input;
-        let raw_data = &envelope.payload.body.as_ref().cloned().ok_or_else(|| {
+        let raw_data = envelope.payload.body.as_ref().ok_or_else(|| {
             OrdError::InscriptionParser(InscriptionParseError::ParsedEnvelope(
                 "Empty payload body in envelope".to_string(),
             ))
         })?;
 
-        let inscription = Self::categorize(envelope, raw_data)?;
+        let inscription = Self::categorize(raw_data)
+            .ok()
+            .unwrap_or(OrdParser::Ordinal(envelope.payload));
 
         let inscription_id = InscriptionId {
             txid: tx.txid(),
-            index,
+            index: envelope.input,
         };
 
         Ok((inscription_id, inscription))
     }
 
-    fn categorize(envelope: Envelope<Nft>, raw_inscription: &[u8]) -> OrdResult<Self> {
+    fn categorize(raw_inscription: &[u8]) -> OrdResult<Self> {
         match serde_json::from_slice::<Value>(raw_inscription) {
-            Ok(value)
+            Ok(value) => {
                 if value.get("p").is_some()
                     && value.get("op").is_some()
-                    && value.get("tick").is_some() =>
-            {
-                let brc20: Brc20 = serde_json::from_value(value).map_err(OrdError::Codec)?;
-                Ok(Self::Brc20(brc20))
+                    && value.get("tick").is_some()
+                {
+                    let brc20: Brc20 = serde_json::from_value(value).map_err(OrdError::Codec)?;
+                    Ok(Self::Brc20(brc20))
+                } else {
+                    let nft: Nft = serde_json::from_value(value).map_err(OrdError::Codec)?;
+                    Ok(Self::Ordinal(nft))
+                }
             }
-            Err(_) | Ok(_) => Ok(OrdParser::Ordinal(envelope.payload)),
+            Err(err) => Err(OrdError::Codec(err)),
         }
     }
 }
@@ -227,19 +217,7 @@ mod tests {
     fn from_raw(raw_inscriptions: Vec<Vec<u8>>) -> OrdResult<Vec<OrdParser>> {
         raw_inscriptions
             .into_iter()
-            .map(|inscription| {
-                let nft = Nft {
-                    content_type: Some("text/plain".to_string().into_bytes()),
-                    body: Some(inscription.clone()),
-                    ..Default::default()
-                };
-                let envelope = Envelope {
-                    payload: nft,
-                    ..Default::default()
-                };
-
-                OrdParser::categorize(envelope.clone(), &inscription)
-            })
+            .map(|inscription| OrdParser::categorize(&inscription))
             .collect()
     }
 
@@ -428,8 +406,8 @@ mod tests {
         assert_eq!(nft_iid.txid, transaction.txid());
         assert_eq!(nft_iid.index, 0);
 
-        // verify is nft
-        assert!(matches!(parsed_nft, OrdParser::Ordinal(_)),);
+        let nft = Nft::try_from(parsed_nft).unwrap();
+        assert_eq!(nft, create_nft("text/plain", "Hello, world!"));
     }
 
     #[test]
@@ -448,11 +426,11 @@ mod tests {
         let inscriptions = vec![ordinal_data.as_bytes().to_vec(), brc20_data.to_vec()];
         let parsed_inscriptions = from_raw(inscriptions.clone()).unwrap();
 
-        // verify is nft
-        assert!(matches!(
-            parsed_inscriptions.clone()[0],
-            OrdParser::Ordinal(_)
-        ),);
+        let nft = create_nft("text/plain", "Hello, world!");
+        assert_eq!(
+            nft,
+            Nft::try_from(parsed_inscriptions.clone()[0].clone()).unwrap()
+        );
 
         let brc20 = Brc20::deploy("ordi", 21000000, Some(1000), Some(8), Some(false));
         assert_eq!(
@@ -532,8 +510,10 @@ mod tests {
         let (nft_iid, parsed_nft) = (&parsed_data[1].0, &parsed_data[1].1);
         assert_eq!(nft_iid.txid, transaction.txid());
         assert_eq!(nft_iid.index, 1);
-        // verify is nft
-        assert!(matches!(parsed_nft, OrdParser::Ordinal(_)),);
+        assert_eq!(
+            Nft::try_from(parsed_nft).unwrap(),
+            create_nft("text/plain", "Hello, world!")
+        );
     }
 
     #[tokio::test]
@@ -568,7 +548,19 @@ mod tests {
             output: vec![], // we don't need outputs for this test
         };
 
-        let nft = OrdParser::parse_one(&tx, 0).unwrap().1.unwrap_nft();
+        let nft = OrdParser::parse_all(&tx)
+            .unwrap()
+            .into_iter()
+            .find(|(_, ins)| {
+                if let OrdParser::Ordinal(_) = ins {
+                    true
+                } else {
+                    false
+                }
+            })
+            .unwrap()
+            .1;
+        let nft = Nft::try_from(nft).unwrap();
         assert_eq!(nft.content_type().unwrap(), "image/gif");
         assert_eq!(nft.body.unwrap().len(), 592);
     }
