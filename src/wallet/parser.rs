@@ -90,8 +90,6 @@ impl OrdParser {
             ))
         })?;
 
-        println!("{envelope:?}");
-
         let index = envelope.input;
         let raw_data = &envelope.payload.body.as_ref().cloned().ok_or_else(|| {
             OrdError::InscriptionParser(InscriptionParseError::ParsedEnvelope(
