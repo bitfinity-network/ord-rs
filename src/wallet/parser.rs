@@ -3,7 +3,6 @@ mod envelope;
 use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
 use bitcoin::Transaction;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use self::envelope::ParsedEnvelope;
 use crate::wallet::RedeemScriptPubkey;
@@ -39,20 +38,19 @@ impl OrdParser {
                     index: envelope.input,
                 };
 
-                envelope
-                    .payload
-                    .body
-                    .ok_or_else(|| {
-                        OrdError::InscriptionParser(InscriptionParseError::ParsedEnvelope(
-                            "Empty payload body in envelope".to_string(),
-                        ))
-                    })
-                    .and_then(|raw_data| {
-                        let parsed_data = Self::categorize(&raw_data)?;
-                        Ok((inscription_id, parsed_data))
-                    })
+                let raw_body = envelope.payload.body.as_ref().ok_or_else(|| {
+                    OrdError::InscriptionParser(InscriptionParseError::ParsedEnvelope(
+                        "Empty payload body in envelope".to_string(),
+                    ))
+                })?;
+
+                if let Some(brc20) = Self::parse_brc20(raw_body) {
+                    Ok((inscription_id, Self::Brc20(brc20)))
+                } else {
+                    Ok((inscription_id, Self::Ordinal(envelope.payload)))
+                }
             })
-            .collect()
+            .collect::<Result<Vec<(InscriptionId, Self)>, OrdError>>()
     }
 
     /// Parses a single inscription from a transaction at a specified index, returning the
@@ -72,38 +70,28 @@ impl OrdParser {
             ))
         })?;
 
-        let raw_data = envelope.payload.body.ok_or_else(|| {
+        let raw_body = envelope.payload.body.as_ref().ok_or_else(|| {
             OrdError::InscriptionParser(InscriptionParseError::ParsedEnvelope(
                 "Empty payload body in envelope".to_string(),
             ))
         })?;
-
-        let inscription = Self::categorize(&raw_data)?;
 
         let inscription_id = InscriptionId {
             txid: tx.txid(),
             index: envelope.input,
         };
 
-        Ok((inscription_id, inscription))
+        if let Some(brc20) = Self::parse_brc20(raw_body) {
+            Ok((inscription_id, Self::Brc20(brc20)))
+        } else {
+            Ok((inscription_id, Self::Ordinal(envelope.payload)))
+        }
     }
 
-    fn categorize(raw_inscription: &[u8]) -> OrdResult<Self> {
-        match serde_json::from_slice::<Value>(raw_inscription) {
-            Ok(value) => {
-                if value.get("p").is_some()
-                    && value.get("op").is_some()
-                    && value.get("tick").is_some()
-                {
-                    let brc20: Brc20 = serde_json::from_value(value).map_err(OrdError::Codec)?;
-                    Ok(Self::Brc20(brc20))
-                } else {
-                    let nft: Nft = serde_json::from_value(value).map_err(OrdError::Codec)?;
-                    Ok(Self::Ordinal(nft))
-                }
-            }
-            Err(err) => Err(OrdError::Codec(err)),
-        }
+    /// Attempts to parse the raw data as a BRC20 inscription.
+    /// Returns `Some(Brc20)` if successful, otherwise `None`.
+    fn parse_brc20(raw_body: &[u8]) -> Option<Brc20> {
+        serde_json::from_slice::<Brc20>(raw_body).ok()
     }
 }
 
@@ -202,19 +190,7 @@ mod tests {
     use bitcoin::{opcodes, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Witness};
 
     use super::*;
-    use crate::inscription::nft::create_nft;
     use crate::utils::test_utils::get_transaction_by_id;
-
-    /// Takes a list of inscription data, attempts to parse them, and
-    /// categorize each of them as either `Self::Brc20` or `Self::Ordinal`.
-    ///
-    /// Returns a list of parsed inscription data, or an error if deserialization fails.
-    fn from_raw(raw_inscriptions: Vec<Vec<u8>>) -> OrdResult<Vec<OrdParser>> {
-        raw_inscriptions
-            .into_iter()
-            .map(|inscription| OrdParser::categorize(&inscription))
-            .collect()
-    }
 
     #[tokio::test]
     async fn ord_parser_should_parse_one() {
@@ -348,7 +324,6 @@ mod tests {
             "dec": "8",
             "self_mint": "true"
         }"#;
-        let ordinal = create_nft("text/plain", "Hello, world!").encode().unwrap();
 
         let script = ScriptBuilder::new()
             .push_opcode(opcodes::OP_FALSE)
@@ -365,7 +340,7 @@ mod tests {
             .push_slice([1])
             .push_slice(b"text/plain;charset=utf-8")
             .push_slice([])
-            .push_slice::<&PushBytes>(ordinal.as_bytes().try_into().unwrap())
+            .push_slice(b"Hello, world!")
             .push_opcode(opcodes::all::OP_ENDIF)
             .into_script();
 
@@ -402,36 +377,8 @@ mod tests {
         assert_eq!(nft_iid.index, 0);
 
         let nft = Nft::try_from(parsed_nft).unwrap();
-        assert_eq!(nft, create_nft("text/plain", "Hello, world!"));
-    }
-
-    #[test]
-    fn ord_parser_should_parse_different_valid_inscription_types_from_raw_bytes() {
-        let brc20_data = br#"{
-            "p": "brc-20",
-            "op": "deploy",
-            "tick": "ordi",
-            "max": "21000000",
-            "lim": "1000",
-            "dec": "8",
-            "self_mint": "false"
-        }"#;
-        let ordinal_data = create_nft("text/plain", "Hello, world!").encode().unwrap();
-
-        let inscriptions = vec![ordinal_data.as_bytes().to_vec(), brc20_data.to_vec()];
-        let parsed_inscriptions = from_raw(inscriptions.clone()).unwrap();
-
-        let nft = create_nft("text/plain", "Hello, world!");
-        assert_eq!(
-            nft,
-            Nft::try_from(parsed_inscriptions.clone()[0].clone()).unwrap()
-        );
-
-        let brc20 = Brc20::deploy("ordi", 21000000, Some(1000), Some(8), Some(false));
-        assert_eq!(
-            brc20,
-            Brc20::try_from(parsed_inscriptions[1].clone()).unwrap()
-        );
+        assert_eq!(nft.content_type().unwrap(), "text/plain;charset=utf-8");
+        assert_eq!(nft.body().unwrap(), "Hello, world!");
     }
 
     #[test]
@@ -445,7 +392,6 @@ mod tests {
         "dec": "8",
         "self_mint": "true"
     }"#;
-        let ordinal = create_nft("text/plain", "Hello, world!").encode().unwrap();
 
         let brc20_script = ScriptBuilder::new()
             .push_opcode(opcodes::OP_FALSE)
@@ -465,7 +411,7 @@ mod tests {
             .push_slice([1])
             .push_slice(b"text/plain;charset=utf-8")
             .push_slice([])
-            .push_slice::<&PushBytes>(ordinal.as_bytes().try_into().unwrap())
+            .push_slice(b"Hello, world!")
             .push_opcode(opcodes::all::OP_ENDIF)
             .into_script();
 
@@ -505,9 +451,67 @@ mod tests {
         let (nft_iid, parsed_nft) = (&parsed_data[1].0, &parsed_data[1].1);
         assert_eq!(nft_iid.txid, transaction.txid());
         assert_eq!(nft_iid.index, 1);
-        assert_eq!(
-            Nft::try_from(parsed_nft).unwrap(),
-            create_nft("text/plain", "Hello, world!")
-        );
+        let nft = Nft::try_from(parsed_nft).unwrap();
+        assert_eq!(nft.content_type().unwrap(), "text/plain;charset=utf-8");
+        assert_eq!(nft.body().unwrap(), "Hello, world!");
+    }
+
+    #[tokio::test]
+    async fn test_should_parse_bitcoin_nft() {
+        let tx: MempoolApiTx = reqwest::get("https://mempool.space/api/tx/276e858872a00b1b07312b093c5f2c1fcdd5a2d9379b9ec47d4b91be17aeaf8d")
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        // make transaction
+        let tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: tx
+                .vin
+                .into_iter()
+                .map(|vin| TxIn {
+                    previous_output: OutPoint::null(), // not used
+                    script_sig: ScriptBuf::new(),      // not used
+                    sequence: Sequence::ZERO,          // not used
+                    witness: Witness::from_slice(
+                        vin.witness
+                            .iter()
+                            .map(|w| hex::decode(w).unwrap())
+                            .collect::<Vec<Vec<u8>>>()
+                            .as_slice(),
+                    ),
+                })
+                .collect::<Vec<_>>(),
+            output: vec![], // we don't need outputs for this test
+        };
+
+        let nft = OrdParser::parse_all(&tx)
+            .unwrap()
+            .into_iter()
+            .find(|(_, ins)| {
+                if let OrdParser::Ordinal(_) = ins {
+                    true
+                } else {
+                    false
+                }
+            })
+            .unwrap()
+            .1;
+        let nft = Nft::try_from(nft).unwrap();
+        assert_eq!(nft.content_type().unwrap(), "image/gif");
+        assert_eq!(nft.body.unwrap().len(), 592);
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    struct MempoolApiTx {
+        vin: Vec<MempoolApiVin>,
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    struct MempoolApiVin {
+        witness: Vec<String>,
     }
 }
