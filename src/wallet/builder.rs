@@ -55,6 +55,7 @@ where
     pub multisig_config: Option<MultisigConfig>,
 }
 
+#[derive(Debug, Clone)]
 pub struct SignCommitTransactionArgs {
     /// UTXOs to be used as inputs of the transaction
     pub inputs: Vec<Utxo>,
@@ -78,6 +79,7 @@ pub struct CreateCommitTransaction {
     pub leftover_amount: Amount,
 }
 
+#[derive(Debug, Clone)]
 /// Arguments for creating a reveal transaction
 pub struct RevealTransactionArgs {
     /// Transaction input (output of commit transaction)
