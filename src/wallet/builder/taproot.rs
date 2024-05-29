@@ -1,6 +1,6 @@
 use bitcoin::key::UntweakedKeypair;
 use bitcoin::secp256k1::{All, Secp256k1};
-use bitcoin::taproot::{ControlBlock, LeafVersion, TaprootBuilder, TaprootSpendInfo};
+use bitcoin::taproot::{ControlBlock, LeafVersion, TaprootBuilder};
 use bitcoin::{Address, Amount, Network, ScriptBuf, TxOut, XOnlyPublicKey};
 
 use crate::{OrdError, OrdResult};
@@ -11,7 +11,6 @@ pub struct TaprootPayload {
     pub control_block: ControlBlock,
     pub prevouts: TxOut,
     pub keypair: UntweakedKeypair,
-    pub taproot_spend_info: TaprootSpendInfo,
 }
 
 impl TaprootPayload {
@@ -38,7 +37,6 @@ impl TaprootPayload {
                 .control_block(&(redeem_script.clone(), LeafVersion::TapScript))
                 .ok_or(OrdError::TaprootCompute)?,
             keypair,
-            taproot_spend_info,
             prevouts: TxOut {
                 value: Amount::from_sat(reveal_balance),
                 script_pubkey: address.script_pubkey(),
