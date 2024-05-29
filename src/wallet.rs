@@ -7,6 +7,7 @@ pub use builder::CreateEdictTxArgs;
 pub use builder::{
     CreateCommitTransaction, CreateCommitTransactionArgs, CreateCommitTransactionArgsV2,
     OrdTransactionBuilder, RedeemScriptPubkey, RevealTransactionArgs, ScriptType,
-    SignCommitTransactionArgs, TxInputInfo, Utxo,
+    SignCommitTransactionArgs, TaprootPayload, TxInputInfo, Utxo,
 };
+
 pub use parser::OrdParser;

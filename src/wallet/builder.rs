@@ -7,7 +7,8 @@ use bitcoin::{
 };
 use signer::Wallet;
 
-use super::builder::taproot::{generate_keypair, TaprootPayload};
+use self::taproot::generate_keypair;
+pub use self::taproot::TaprootPayload;
 use crate::inscription::Inscription;
 use crate::utils::constants::POSTAGE;
 use crate::utils::fees::{estimate_commit_fee, estimate_reveal_fee, MultisigConfig};
