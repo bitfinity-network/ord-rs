@@ -76,6 +76,7 @@ pub struct CreateCommitTransaction {
 }
 
 /// Arguments for creating a reveal transaction
+#[derive(Debug, Clone)]
 pub struct RevealTransactionArgs {
     /// Transaction input (output of commit transaction)
     pub input: Utxo,
