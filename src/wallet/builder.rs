@@ -122,6 +122,25 @@ impl OrdTransactionBuilder {
         }
     }
 
+    /// A constructor that allows to set the taproot payload, in case the user wants to resume a previous session
+    pub fn new_with_taproot_payload(
+        public_key: PublicKey,
+        script_type: ScriptType,
+        signer: Wallet,
+        taproot_payload: Option<TaprootPayload>,
+    ) -> Self {
+        Self {
+            public_key,
+            script_type,
+            taproot_payload,
+            signer,
+        }
+    }
+
+    pub fn taproot_payload(&self) -> Option<&TaprootPayload> {
+        self.taproot_payload.as_ref()
+    }
+
     /// Creates the commit transaction.
     pub fn build_commit_transaction<T>(
         &mut self,

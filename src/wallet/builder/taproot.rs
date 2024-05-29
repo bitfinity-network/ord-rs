@@ -5,7 +5,7 @@ use bitcoin::{Address, Amount, Network, ScriptBuf, TxOut, XOnlyPublicKey};
 
 use crate::{OrdError, OrdResult};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TaprootPayload {
     pub address: Address,
     pub control_block: ControlBlock,
