@@ -4,9 +4,9 @@
 //! 1. Deployments initialize the BRC-20. Do not affect state.
 //! 2. Mints provide a balance to only the first owner of the mint function inscription.
 //! 3. Transfers deduct from the sender's balance and add to the receiver's balance,
-//! only upon the first transfer of the transfer function. That is,
-//! - step 1. Sender inscribes the transfer function to sender's (own) address.
-//! - step 2. Sender transfers transfer function to final destination address.
+//!     only upon the first transfer of the transfer function. That is,
+//!     - step 1. Sender inscribes the transfer function to sender's (own) address.
+//!     - step 2. Sender transfers transfer function to final destination address.
 
 use std::str::FromStr;
 

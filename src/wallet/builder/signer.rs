@@ -214,7 +214,7 @@ impl Wallet {
         };
 
         let mut witness = Witness::new();
-        witness.push(&signature.to_vec());
+        witness.push(signature.to_vec());
 
         *sighash_cache.witness_mut(index).unwrap() = witness;
 
