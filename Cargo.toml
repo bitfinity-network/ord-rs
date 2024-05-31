@@ -15,7 +15,7 @@ rune = ["ordinals"]
 
 [dependencies]
 async-trait = "0.1"
-bitcoin = { version = "0.31", features = ["rand"] }
+bitcoin = { version = "0.31", features = ["rand", "serde"] }
 ciborium = "0.2"
 hex = "0.4"
 log = "0.4"

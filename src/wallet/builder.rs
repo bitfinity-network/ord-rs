@@ -8,7 +8,8 @@ use bitcoin::{
 };
 use signer::Wallet;
 
-use super::builder::taproot::{generate_keypair, TaprootPayload};
+use self::taproot::generate_keypair;
+pub use self::taproot::TaprootPayload;
 use crate::inscription::Inscription;
 use crate::utils::constants::POSTAGE;
 use crate::utils::fees::{estimate_commit_fee, estimate_reveal_fee, MultisigConfig};
@@ -81,6 +82,7 @@ pub struct CreateCommitTransaction {
 
 #[derive(Debug, Clone)]
 /// Arguments for creating a reveal transaction
+#[derive(Debug, Clone)]
 pub struct RevealTransactionArgs {
     /// Transaction input (output of commit transaction)
     pub input: Utxo,
@@ -124,6 +126,25 @@ impl OrdTransactionBuilder {
             taproot_payload: None,
             signer,
         }
+    }
+
+    /// A constructor that allows to set the taproot payload, in case the user wants to resume a previous session
+    pub fn new_with_taproot_payload(
+        public_key: PublicKey,
+        script_type: ScriptType,
+        signer: Wallet,
+        taproot_payload: Option<TaprootPayload>,
+    ) -> Self {
+        Self {
+            public_key,
+            script_type,
+            taproot_payload,
+            signer,
+        }
+    }
+
+    pub fn taproot_payload(&self) -> Option<&TaprootPayload> {
+        self.taproot_payload.as_ref()
     }
 
     /// Creates the commit transaction.
@@ -498,7 +519,7 @@ where
 }
 
 /// Unspent transaction output to be used as input of a transaction
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Utxo {
     pub id: Txid,
     pub index: u32,
