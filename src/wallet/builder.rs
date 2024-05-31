@@ -80,7 +80,6 @@ pub struct CreateCommitTransaction {
     pub leftover_amount: Amount,
 }
 
-#[derive(Debug, Clone)]
 /// Arguments for creating a reveal transaction
 #[derive(Debug, Clone)]
 pub struct RevealTransactionArgs {
