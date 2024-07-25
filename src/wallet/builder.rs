@@ -6,6 +6,8 @@ use bitcoin::{
     secp256k1, Address, Amount, FeeRate, Network, OutPoint, PublicKey, ScriptBuf, Sequence,
     Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
+#[cfg(feature = "rune")]
+use ordinals::{Edict, Etching, RuneId, Runestone as OrdRunestone};
 use signer::Wallet;
 
 use self::taproot::generate_keypair;
@@ -89,6 +91,31 @@ pub struct RevealTransactionArgs {
     pub recipient_address: Address,
     /// The redeem script returned by `create_commit_transaction`
     pub redeem_script: ScriptBuf,
+    #[cfg(feature = "rune")]
+    /// Optional runestone to append to the tx outputs
+    pub runestone: Option<Runestone>,
+}
+
+#[cfg(feature = "rune")]
+/// Runestone wrapper; implemented because FOR SOME REASONS, the `Runestone` of `ordinals` doesn't implement Clone...
+#[derive(Debug, Clone)]
+pub struct Runestone {
+    pub edicts: Vec<Edict>,
+    pub etching: Option<Etching>,
+    pub mint: Option<RuneId>,
+    pub pointer: Option<u32>,
+}
+
+#[cfg(feature = "rune")]
+impl From<Runestone> for OrdRunestone {
+    fn from(runestone: Runestone) -> Self {
+        OrdRunestone {
+            edicts: runestone.edicts,
+            etching: runestone.etching,
+            mint: runestone.mint,
+            pointer: runestone.pointer,
+        }
+    }
 }
 
 /// Type of the script to use. Both are supported, but P2WSH may not be supported by all the indexers
@@ -316,11 +343,30 @@ impl OrdTransactionBuilder {
             txid: args.input.id,
             vout: args.input.index,
         };
+
         // tx out
+        #[cfg(feature = "rune")]
+        let mut tx_out = vec![TxOut {
+            value: Amount::from_sat(POSTAGE),
+            script_pubkey: args.recipient_address.script_pubkey(),
+        }];
+        #[cfg(not(feature = "rune"))]
         let tx_out = vec![TxOut {
             value: Amount::from_sat(POSTAGE),
             script_pubkey: args.recipient_address.script_pubkey(),
         }];
+
+        #[cfg(feature = "rune")]
+        if let Some(runestone) = args.runestone {
+            let runestone = OrdRunestone::from(runestone);
+            // ! Step required to encode the runestone because Bitcoin version mismatches
+            let btc_030_script = runestone.encipher();
+            let btc_031_script = ScriptBuf::from_bytes(btc_030_script.to_bytes());
+            tx_out.push(TxOut {
+                value: Amount::from_sat(0),
+                script_pubkey: btc_031_script,
+            });
+        }
         // txin
         let tx_in = vec![TxIn {
             previous_output,
@@ -640,6 +686,8 @@ mod test {
                 },
                 recipient_address: recipient_address.clone(),
                 redeem_script: tx_result.redeem_script,
+                #[cfg(feature = "rune")]
+                runestone: None,
             })
             .await
             .unwrap();
@@ -743,11 +791,112 @@ mod test {
                 },
                 recipient_address: recipient_address.clone(),
                 redeem_script: tx_result.redeem_script,
+                #[cfg(feature = "rune")]
+                runestone: None,
             })
             .await
             .unwrap();
 
         let witness = reveal_transaction.input[0].witness.clone().to_vec();
         assert_eq!(witness.len(), 3);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "rune")]
+    async fn test_should_append_runestone() {
+        // this test refers to these testnet transactions, commit and reveal:
+        // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
+        // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
+        // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
+
+        use ordinals::Rune;
+        let private_key = PrivateKey::from_wif(WIF).unwrap();
+        let public_key = private_key.public_key(&Secp256k1::new());
+        let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
+
+        let mut builder = OrdTransactionBuilder::p2tr(private_key);
+
+        let inputs = vec![Utxo {
+            id: Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7")
+                .unwrap(), // the transaction that funded our wallet
+            index: 1,
+            amount: Amount::from_sat(8_000),
+        }];
+        let commit_transaction_args = CreateCommitTransactionArgsV2 {
+            inputs: inputs.clone(),
+            txin_script_pubkey: address.script_pubkey(),
+            inscription: Brc20::transfer("mona".to_string(), 100),
+            leftovers_recipient: address.clone(),
+            commit_fee: Amount::from_sat(2_500),
+            reveal_fee: Amount::from_sat(4_700),
+        };
+        let tx_result = builder
+            .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
+            .unwrap();
+
+        assert!(builder.taproot_payload.is_some());
+
+        // sign
+        let sign_args = SignCommitTransactionArgs {
+            inputs,
+            txin_script_pubkey: address.script_pubkey(),
+        };
+        let tx = builder
+            .sign_commit_transaction(tx_result.unsigned_tx, sign_args)
+            .await
+            .unwrap();
+
+        let witness = tx.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 2);
+        assert_eq!(
+            witness[1],
+            hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
+        );
+
+        let encoded_pubkey = builder
+            .taproot_payload
+            .as_ref()
+            .unwrap()
+            .keypair
+            .public_key()
+            .serialize();
+        println!("{} {}", encoded_pubkey.len(), hex::encode(encoded_pubkey));
+
+        // check redeem script contains pubkey for taproot
+        let redeem_script = &tx_result.redeem_script;
+        assert_eq!(
+            redeem_script.as_bytes()[0],
+            bitcoin::opcodes::all::OP_PUSHBYTES_32.to_u8()
+        );
+
+        let tx_id = tx.txid();
+        let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
+
+        let reveal_transaction = builder
+            .build_reveal_transaction(RevealTransactionArgs {
+                input: Utxo {
+                    id: tx_id,
+                    index: 0,
+                    amount: tx_result.reveal_balance,
+                },
+                recipient_address: recipient_address.clone(),
+                redeem_script: tx_result.redeem_script,
+                runestone: Some(Runestone {
+                    edicts: vec![],
+                    etching: Some(Etching {
+                        rune: Some(Rune::from_str("SUPERMAXIM").unwrap()),
+                        ..Default::default()
+                    }),
+                    mint: None,
+                    pointer: None,
+                }),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(reveal_transaction.output.len(), 2);
     }
 }

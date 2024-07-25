@@ -129,6 +129,7 @@ async fn main() -> anyhow::Result<()> {
             },
             recipient_address: sender_address,
             redeem_script: commit_tx.redeem_script,
+            runestone: None,
         })
         .await?;
     debug!("reveal transaction: {reveal_transaction:?}");
