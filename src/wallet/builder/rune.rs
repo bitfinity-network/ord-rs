@@ -3,8 +3,9 @@ use bitcoin::transaction::Version;
 use bitcoin::{Address, Amount, FeeRate, ScriptBuf, Transaction, TxIn, TxOut};
 use ordinals::{Edict, Etching, RuneId, Runestone as OrdRunestone};
 
-use crate::fees::calculate_transaction_fees;
+use crate::fees::estimate_transaction_fees;
 use crate::wallet::builder::TxInputInfo;
+use crate::wallet::ScriptType;
 use crate::{OrdError, OrdTransactionBuilder};
 
 /// Postage amount for rune transaction.
@@ -128,7 +129,13 @@ impl OrdTransactionBuilder {
             output: outputs,
         };
 
-        let fee_amount = calculate_transaction_fees(&unsigned_tx, args.fee_rate);
+        let fee_amount = estimate_transaction_fees(
+            ScriptType::P2TR,
+            unsigned_tx.input.len(),
+            args.fee_rate,
+            &None,
+            unsigned_tx.output.clone(),
+        );
         let change_amount = args
             .input_amount()
             .checked_sub(fee_amount + RUNE_POSTAGE * 2)
@@ -154,7 +161,7 @@ mod tests {
     use bitcoin::{Network, OutPoint, PrivateKey, PublicKey, Txid};
 
     use super::*;
-    use crate::wallet::{LocalSigner, ScriptType};
+    use crate::wallet::LocalSigner;
     use crate::Wallet;
 
     #[tokio::test]
