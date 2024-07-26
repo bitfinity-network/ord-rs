@@ -787,7 +787,7 @@ mod test {
         // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
         // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
 
-        use ordinals::{Etching, Rune};
+        use ordinals::{Etching, Rune, Terms};
         let private_key = PrivateKey::from_wif(WIF).unwrap();
         let public_key = private_key.public_key(&Secp256k1::new());
         let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
@@ -853,6 +853,30 @@ mod test {
             .require_network(Network::Testnet)
             .unwrap();
 
+        let etching = Etching {
+            rune: Some(Rune::from_str("SUPERMAXRUNENAME").unwrap()),
+            divisibility: Some(2),
+            premine: Some(10_000),
+            spacers: None,
+            symbol: Some('$'),
+            terms: Some(Terms {
+                amount: Some(2000),
+                cap: Some(500),
+                height: (None, None),
+                offset: (None, None),
+            }),
+            turbo: true,
+        };
+        let runestone = Runestone {
+            etching: Some(etching),
+            edicts: vec![],
+            mint: None,
+            pointer: None,
+        };
+
+        let expected_script_030 = OrdRunestone::from(runestone.clone()).encipher();
+        let expected_script = ScriptBuf::from_bytes(expected_script_030.to_bytes());
+
         let reveal_transaction = builder
             .build_reveal_transaction(RevealTransactionArgs {
                 input: Utxo {
@@ -864,10 +888,7 @@ mod test {
                 redeem_script: tx_result.redeem_script,
                 runestone: Some(Runestone {
                     edicts: vec![],
-                    etching: Some(Etching {
-                        rune: Some(Rune::from_str("SUPERMAXIM").unwrap()),
-                        ..Default::default()
-                    }),
+                    etching: Some(runestone.etching.unwrap()),
                     mint: None,
                     pointer: None,
                 }),
@@ -876,5 +897,6 @@ mod test {
             .unwrap();
 
         assert_eq!(reveal_transaction.output.len(), 2);
+        assert_eq!(reveal_transaction.output[1].script_pubkey, expected_script);
     }
 }
