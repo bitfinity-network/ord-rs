@@ -91,6 +91,11 @@ pub fn estimate_transaction_fees(
     current_fee_rate.fee_vb(vbytes as u64).unwrap()
 }
 
+pub fn calculate_transaction_fees(transaction: &Transaction, current_fee_rate: FeeRate) -> Amount {
+    let vbytes = transaction.vsize();
+    current_fee_rate.fee_vb(vbytes as u64).unwrap()
+}
+
 fn estimate_vbytes(
     inputs: usize,
     script_type: ScriptType,
