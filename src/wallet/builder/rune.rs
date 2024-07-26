@@ -1,7 +1,7 @@
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::Version;
 use bitcoin::{Address, Amount, FeeRate, ScriptBuf, Transaction, TxIn, TxOut};
-use ordinals::{Edict, RuneId, Runestone};
+use ordinals::{Edict, Etching, RuneId, Runestone as OrdRunestone};
 
 use crate::fees::estimate_transaction_fees;
 use crate::wallet::builder::TxInputInfo;
@@ -12,6 +12,28 @@ use crate::{OrdError, OrdTransactionBuilder};
 ///
 /// The value is same as in `ord` tool.
 pub const RUNE_POSTAGE: Amount = Amount::from_sat(10_000);
+
+#[cfg(feature = "rune")]
+/// Runestone wrapper; implemented because FOR SOME REASONS, the `Runestone` of `ordinals` doesn't implement Clone...
+#[derive(Debug, Clone)]
+pub struct Runestone {
+    pub edicts: Vec<Edict>,
+    pub etching: Option<Etching>,
+    pub mint: Option<RuneId>,
+    pub pointer: Option<u32>,
+}
+
+#[cfg(feature = "rune")]
+impl From<Runestone> for OrdRunestone {
+    fn from(runestone: Runestone) -> Self {
+        OrdRunestone {
+            edicts: runestone.edicts,
+            etching: runestone.etching,
+            mint: runestone.mint,
+            pointer: runestone.pointer,
+        }
+    }
+}
 
 /// Arguments for the [`OrdTransactionBuilder::create_edict_transaction`] method.
 pub struct CreateEdictTxArgs {
@@ -54,7 +76,7 @@ impl OrdTransactionBuilder {
         &self,
         args: &CreateEdictTxArgs,
     ) -> Result<Transaction, OrdError> {
-        let runestone = Runestone {
+        let runestone = OrdRunestone {
             edicts: vec![Edict {
                 id: args.rune,
                 amount: args.amount,

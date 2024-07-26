@@ -7,7 +7,7 @@ use bitcoin::{
     Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
 #[cfg(feature = "rune")]
-use ordinals::{Edict, Etching, RuneId, Runestone as OrdRunestone};
+use ordinals::Runestone as OrdRunestone;
 use signer::Wallet;
 
 use self::taproot::generate_keypair;
@@ -21,7 +21,7 @@ use crate::{OrdError, OrdResult};
 #[cfg(feature = "rune")]
 mod rune;
 #[cfg(feature = "rune")]
-pub use rune::CreateEdictTxArgs;
+pub use rune::{CreateEdictTxArgs, Runestone};
 
 use crate::wallet::builder::signer::LocalSigner;
 
@@ -94,28 +94,6 @@ pub struct RevealTransactionArgs {
     #[cfg(feature = "rune")]
     /// Optional runestone to append to the tx outputs
     pub runestone: Option<Runestone>,
-}
-
-#[cfg(feature = "rune")]
-/// Runestone wrapper; implemented because FOR SOME REASONS, the `Runestone` of `ordinals` doesn't implement Clone...
-#[derive(Debug, Clone)]
-pub struct Runestone {
-    pub edicts: Vec<Edict>,
-    pub etching: Option<Etching>,
-    pub mint: Option<RuneId>,
-    pub pointer: Option<u32>,
-}
-
-#[cfg(feature = "rune")]
-impl From<Runestone> for OrdRunestone {
-    fn from(runestone: Runestone) -> Self {
-        OrdRunestone {
-            edicts: runestone.edicts,
-            etching: runestone.etching,
-            mint: runestone.mint,
-            pointer: runestone.pointer,
-        }
-    }
 }
 
 /// Type of the script to use. Both are supported, but P2WSH may not be supported by all the indexers
@@ -809,7 +787,7 @@ mod test {
         // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
         // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
 
-        use ordinals::Rune;
+        use ordinals::{Etching, Rune};
         let private_key = PrivateKey::from_wif(WIF).unwrap();
         let public_key = private_key.public_key(&Secp256k1::new());
         let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
