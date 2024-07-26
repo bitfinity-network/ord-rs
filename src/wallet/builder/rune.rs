@@ -15,7 +15,7 @@ pub const RUNE_POSTAGE: Amount = Amount::from_sat(10_000);
 
 #[cfg(feature = "rune")]
 /// Runestone wrapper; implemented because FOR SOME REASONS, the `Runestone` of `ordinals` doesn't implement Clone...
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Runestone {
     pub edicts: Vec<Edict>,
     pub etching: Option<Etching>,
