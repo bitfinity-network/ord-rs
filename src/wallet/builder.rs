@@ -336,12 +336,14 @@ impl OrdTransactionBuilder {
 
         #[cfg(feature = "rune")]
         if let Some(runestone) = args.runestone {
-            let mut runestone = OrdRunestone::from(runestone);
-            // Set the Index of the runestone in the output
-            runestone.pointer = Some(1);
+            let runestone = OrdRunestone::from(runestone);
             // ! Step required to encode the runestone because Bitcoin version mismatches
             let btc_030_script = runestone.encipher();
             let btc_031_script = ScriptBuf::from_bytes(btc_030_script.to_bytes());
+            tx_out.push(TxOut {
+                value: Amount::from_sat(POSTAGE),
+                script_pubkey: args.recipient_address.script_pubkey(),
+            });
             tx_out.push(TxOut {
                 value: Amount::from_sat(0),
                 script_pubkey: btc_031_script,
@@ -898,7 +900,7 @@ mod test {
             .await
             .unwrap();
 
-        assert_eq!(reveal_transaction.output.len(), 2);
-        assert_eq!(reveal_transaction.output[1].script_pubkey, expected_script);
+        assert_eq!(reveal_transaction.output.len(), 3);
+        assert_eq!(reveal_transaction.output[2].script_pubkey, expected_script);
     }
 }
