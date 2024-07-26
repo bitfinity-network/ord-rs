@@ -138,9 +138,9 @@ impl OrdTransactionBuilder {
         );
         let change_amount = args
             .input_amount()
-            .checked_sub(fee_amount + RUNE_POSTAGE * 2)
+            .checked_sub(fee_amount + RUNE_POSTAGE * 3)
             .ok_or(OrdError::InsufficientBalance {
-                required: (fee_amount + RUNE_POSTAGE * 2).to_sat(),
+                required: (fee_amount + RUNE_POSTAGE * 3).to_sat(),
                 available: args.input_amount().to_sat(),
             })?;
 
