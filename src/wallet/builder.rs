@@ -336,7 +336,9 @@ impl OrdTransactionBuilder {
 
         #[cfg(feature = "rune")]
         if let Some(runestone) = args.runestone {
-            let runestone = OrdRunestone::from(runestone);
+            let mut runestone = OrdRunestone::from(runestone);
+            // Set the Index of the runestone in the output
+            runestone.pointer = Some(1);
             // ! Step required to encode the runestone because Bitcoin version mismatches
             let btc_030_script = runestone.encipher();
             let btc_031_script = ScriptBuf::from_bytes(btc_030_script.to_bytes());
