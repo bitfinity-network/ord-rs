@@ -69,3 +69,8 @@ path = "examples/print_script.rs"
 name = "edict"
 path = "examples/edict.rs"
 required-features = ["rune"]
+
+[[example]]
+name = "etch"
+path = "examples/etch.rs"
+required-features = ["rune"]
