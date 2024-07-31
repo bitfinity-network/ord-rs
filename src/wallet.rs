@@ -8,5 +8,5 @@ pub use builder::{
     SignCommitTransactionArgs, TaprootPayload, TxInputInfo, Utxo,
 };
 #[cfg(feature = "rune")]
-pub use builder::{CreateEdictTxArgs, Runestone};
+pub use builder::{CreateEdictTxArgs, EtchingTransactionArgs, Runestone};
 pub use parser::OrdParser;

@@ -1,12 +1,16 @@
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::Version;
-use bitcoin::{Address, Amount, FeeRate, ScriptBuf, Transaction, TxIn, TxOut};
+use bitcoin::{
+    Address, Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+};
 use ordinals::{Edict, Etching, RuneId, Runestone as OrdRunestone};
 
+use super::Utxo;
+use crate::constants::POSTAGE;
 use crate::fees::estimate_transaction_fees;
 use crate::wallet::builder::TxInputInfo;
 use crate::wallet::ScriptType;
-use crate::{OrdError, OrdTransactionBuilder};
+use crate::{OrdError, OrdResult, OrdTransactionBuilder};
 
 /// Postage amount for rune transaction.
 ///
@@ -61,6 +65,19 @@ impl CreateEdictTxArgs {
     }
 }
 
+/// Arguments for creating a etching reveal transaction
+#[derive(Debug, Clone)]
+pub struct EtchingTransactionArgs {
+    /// Transaction input (output of commit transaction)
+    pub input: Utxo,
+    /// Recipient address of the inscription, only support P2PKH
+    pub recipient_address: Address,
+    /// The redeem script returned by `create_commit_transaction`
+    pub redeem_script: ScriptBuf,
+    /// Runestone to append to the tx outputs
+    pub runestone: Runestone,
+}
+
 impl OrdTransactionBuilder {
     /// Creates an unsigned rune edict transaction.
     ///
@@ -72,10 +89,7 @@ impl OrdTransactionBuilder {
     /// # Errors
     /// * Returns [`OrdError::InsufficientBalance`] if the inputs BTC amount is not enough
     ///   to cover the outputs and transaction fee.
-    pub fn create_edict_transaction(
-        &self,
-        args: &CreateEdictTxArgs,
-    ) -> Result<Transaction, OrdError> {
+    pub fn create_edict_transaction(&self, args: &CreateEdictTxArgs) -> OrdResult<Transaction> {
         let runestone = OrdRunestone {
             edicts: vec![Edict {
                 id: args.rune,
@@ -138,15 +152,82 @@ impl OrdTransactionBuilder {
         );
         let change_amount = args
             .input_amount()
-            .checked_sub(fee_amount + RUNE_POSTAGE * 3)
+            .checked_sub(fee_amount + RUNE_POSTAGE * 2)
             .ok_or(OrdError::InsufficientBalance {
-                required: (fee_amount + RUNE_POSTAGE * 3).to_sat(),
+                required: (fee_amount + RUNE_POSTAGE * 2).to_sat(),
                 available: args.input_amount().to_sat(),
             })?;
 
         unsigned_tx.output[3].value = change_amount;
 
         Ok(unsigned_tx)
+    }
+
+    /// Create the reveal transaction
+    pub async fn build_etching_transaction(
+        &mut self,
+        args: EtchingTransactionArgs,
+    ) -> OrdResult<Transaction> {
+        // previous output
+        let previous_output = OutPoint {
+            txid: args.input.id,
+            vout: args.input.index,
+        };
+
+        let runestone = OrdRunestone::from(args.runestone);
+        let btc_030_script = runestone.encipher();
+        let btc_031_script = ScriptBuf::from_bytes(btc_030_script.to_bytes());
+
+        // tx out
+        let tx_out = vec![
+            TxOut {
+                value: Amount::from_sat(POSTAGE),
+                script_pubkey: args.recipient_address.script_pubkey(),
+            },
+            TxOut {
+                value: Amount::from_sat(POSTAGE),
+                script_pubkey: args.recipient_address.script_pubkey(),
+            },
+            TxOut {
+                value: Amount::from_sat(0),
+                script_pubkey: btc_031_script,
+            },
+        ];
+        // txin
+        let tx_in = vec![TxIn {
+            previous_output,
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::from_consensus(0xffffffff),
+            witness: Witness::new(),
+        }];
+
+        // make transaction and sign it
+        let unsigned_tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: tx_in,
+            output: tx_out,
+        };
+
+        let tx = match self.taproot_payload.as_ref() {
+            Some(taproot_payload) => self.signer.sign_reveal_transaction_schnorr(
+                taproot_payload,
+                &args.redeem_script,
+                unsigned_tx,
+            ),
+            None => {
+                self.signer
+                    .sign_reveal_transaction_ecdsa(
+                        &self.public_key,
+                        &args.input,
+                        unsigned_tx,
+                        &args.redeem_script,
+                    )
+                    .await
+            }
+        }?;
+
+        Ok(tx)
     }
 }
 
@@ -159,10 +240,14 @@ mod tests {
     use bitcoin::consensus::Decodable;
     use bitcoin::key::Secp256k1;
     use bitcoin::{Network, OutPoint, PrivateKey, PublicKey, Txid};
+    use hex_literal::hex;
 
     use super::*;
-    use crate::wallet::LocalSigner;
-    use crate::Wallet;
+    use crate::wallet::{CreateCommitTransactionArgsV2, LocalSigner};
+    use crate::{Nft, SignCommitTransactionArgs, Wallet};
+
+    // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
+    const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
     #[tokio::test]
     async fn create_edict_transaction() {
@@ -292,5 +377,128 @@ mod tests {
             );
             //todo: add check of value after https://infinityswap.atlassian.net/browse/EPROD-830
         }
+    }
+
+    #[tokio::test]
+    async fn test_should_append_runestone() {
+        // this test refers to these testnet transactions, commit and reveal:
+        // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
+        // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
+        // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
+
+        use ordinals::{Etching, Rune, Terms};
+        let private_key = PrivateKey::from_wif(WIF).unwrap();
+        let public_key = private_key.public_key(&Secp256k1::new());
+        let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
+
+        let mut builder = OrdTransactionBuilder::p2tr(private_key);
+
+        let inputs = vec![Utxo {
+            id: Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7")
+                .unwrap(), // the transaction that funded our wallet
+            index: 1,
+            amount: Amount::from_sat(8_000),
+        }];
+        let commit_transaction_args = CreateCommitTransactionArgsV2 {
+            inputs: inputs.clone(),
+            txin_script_pubkey: address.script_pubkey(),
+            inscription: Nft::new(
+                Some("text/plain;charset=utf-8".as_bytes().to_vec()),
+                Some("SUPERMAXRUNENAME".as_bytes().to_vec()),
+            ),
+            leftovers_recipient: address.clone(),
+            commit_fee: Amount::from_sat(2_500),
+            reveal_fee: Amount::from_sat(4_700),
+        };
+        let tx_result = builder
+            .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
+            .unwrap();
+
+        assert!(builder.taproot_payload.is_some());
+
+        // sign
+        let sign_args = SignCommitTransactionArgs {
+            inputs,
+            txin_script_pubkey: address.script_pubkey(),
+        };
+        let tx = builder
+            .sign_commit_transaction(tx_result.unsigned_tx, sign_args)
+            .await
+            .unwrap();
+
+        let witness = tx.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 2);
+        assert_eq!(
+            witness[1],
+            hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
+        );
+
+        let encoded_pubkey = builder
+            .taproot_payload
+            .as_ref()
+            .unwrap()
+            .keypair
+            .public_key()
+            .serialize();
+        println!("{} {}", encoded_pubkey.len(), hex::encode(encoded_pubkey));
+
+        // check redeem script contains pubkey for taproot
+        let redeem_script = &tx_result.redeem_script;
+        assert_eq!(
+            redeem_script.as_bytes()[0],
+            bitcoin::opcodes::all::OP_PUSHBYTES_32.to_u8()
+        );
+
+        let tx_id = tx.txid();
+        let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
+
+        let etching = Etching {
+            rune: Some(Rune::from_str("SUPERMAXRUNENAME").unwrap()),
+            divisibility: Some(2),
+            premine: Some(10_000),
+            spacers: None,
+            symbol: Some('$'),
+            terms: Some(Terms {
+                amount: Some(2000),
+                cap: Some(500),
+                height: (None, None),
+                offset: (None, None),
+            }),
+            turbo: true,
+        };
+        let runestone = Runestone {
+            etching: Some(etching),
+            edicts: vec![],
+            mint: None,
+            pointer: None,
+        };
+
+        let expected_script_030 = OrdRunestone::from(runestone.clone()).encipher();
+        let expected_script = ScriptBuf::from_bytes(expected_script_030.to_bytes());
+
+        let reveal_transaction = builder
+            .build_etching_transaction(EtchingTransactionArgs {
+                input: Utxo {
+                    id: tx_id,
+                    index: 0,
+                    amount: tx_result.reveal_balance,
+                },
+                recipient_address: recipient_address.clone(),
+                redeem_script: tx_result.redeem_script,
+                runestone: Runestone {
+                    edicts: vec![],
+                    etching: Some(runestone.etching.unwrap()),
+                    mint: None,
+                    pointer: None,
+                },
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(reveal_transaction.output.len(), 3);
+        assert_eq!(reveal_transaction.output[2].script_pubkey, expected_script);
     }
 }

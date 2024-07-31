@@ -7,7 +7,7 @@ use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, PrivateKey};
 use log::{debug, info};
 use ord_rs::wallet::{
-    CreateCommitTransactionArgsV2, RevealTransactionArgs, Runestone, SignCommitTransactionArgs,
+    CreateCommitTransactionArgsV2, EtchingTransactionArgs, Runestone, SignCommitTransactionArgs,
 };
 use ord_rs::{Nft, OrdTransactionBuilder};
 use ordinals::{Etching, Rune, Terms};
@@ -158,7 +158,7 @@ async fn main() -> anyhow::Result<()> {
 
     debug!("getting reveal transaction...");
     let reveal_transaction = builder
-        .build_reveal_transaction(RevealTransactionArgs {
+        .build_etching_transaction(EtchingTransactionArgs {
             input: ord_rs::wallet::Utxo {
                 id: commit_txid,
                 index: 0,
@@ -166,8 +166,7 @@ async fn main() -> anyhow::Result<()> {
             },
             recipient_address: sender_address,
             redeem_script: commit_tx.redeem_script,
-            #[cfg(feature = "rune")]
-            runestone: Some(runestone),
+            runestone,
         })
         .await?;
     debug!("reveal transaction: {reveal_transaction:?}");
