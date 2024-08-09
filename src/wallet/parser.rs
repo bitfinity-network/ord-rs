@@ -491,13 +491,7 @@ mod tests {
         let nft = OrdParser::parse_all(&tx)
             .unwrap()
             .into_iter()
-            .find(|(_, ins)| {
-                if let OrdParser::Ordinal(_) = ins {
-                    true
-                } else {
-                    false
-                }
-            })
+            .find(|(_, ins)| matches!(ins, OrdParser::Ordinal(_)))
             .unwrap()
             .1;
         let nft = Nft::try_from(nft).unwrap();

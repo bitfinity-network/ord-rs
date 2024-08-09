@@ -2,7 +2,7 @@
 name = "ord-rs"
 categories = ["cryptography::cryptocurrencies"]
 license = "MIT"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["Finity Technologies"]
 description = "A library for working with Ordinal inscriptions."
 repository = "https://github.com/bitfinity-network/ord-rs"
@@ -19,7 +19,7 @@ bitcoin = { version = "0.31", features = ["rand", "serde"] }
 ciborium = "0.2"
 hex = "0.4"
 log = "0.4"
-ordinals = { version = "0.0.8", optional = true }
+ordinals = { version = "0.0.9", optional = true }
 rand = { version = "0.8" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -68,4 +68,9 @@ path = "examples/print_script.rs"
 [[example]]
 name = "edict"
 path = "examples/edict.rs"
+required-features = ["rune"]
+
+[[example]]
+name = "etch"
+path = "examples/etch.rs"
 required-features = ["rune"]

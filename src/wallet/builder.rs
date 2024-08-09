@@ -19,7 +19,7 @@ use crate::{OrdError, OrdResult};
 #[cfg(feature = "rune")]
 mod rune;
 #[cfg(feature = "rune")]
-pub use rune::CreateEdictTxArgs;
+pub use rune::{CreateEdictTxArgs, EtchingTransactionArgs, Runestone};
 
 use crate::wallet::builder::signer::LocalSigner;
 
@@ -316,11 +316,13 @@ impl OrdTransactionBuilder {
             txid: args.input.id,
             vout: args.input.index,
         };
+
         // tx out
         let tx_out = vec![TxOut {
             value: Amount::from_sat(POSTAGE),
             script_pubkey: args.recipient_address.script_pubkey(),
         }];
+
         // txin
         let tx_in = vec![TxIn {
             previous_output,
