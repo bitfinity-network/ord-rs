@@ -19,7 +19,7 @@ use crate::{OrdError, OrdResult};
 #[cfg(feature = "rune")]
 mod rune;
 #[cfg(feature = "rune")]
-pub use rune::{CreateEdictTxArgs, EtchingTransactionArgs, Runestone};
+pub use rune::{CreateEdictTxArgs, EtchingTransactionArgs, Runestone, RUNE_POSTAGE};
 
 use crate::wallet::builder::signer::LocalSigner;
 

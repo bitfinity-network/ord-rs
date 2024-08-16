@@ -23,6 +23,7 @@ pub struct MultisigConfig {
     pub total: usize,
 }
 
+/// Estimates the commit fee for a transaction.
 pub fn estimate_commit_fee(
     unsigned_commit_tx: Transaction,
     script_type: ScriptType,
@@ -38,6 +39,7 @@ pub fn estimate_commit_fee(
     )
 }
 
+/// Estimates the reveal fee for a transaction.
 pub fn estimate_reveal_fee(
     inputs: Vec<OutPoint>,
     recipient_address: Address,
@@ -79,6 +81,7 @@ pub fn estimate_reveal_fee(
     )
 }
 
+/// Estimates the transaction fees for a transaction.
 pub fn estimate_transaction_fees(
     script_type: ScriptType,
     number_of_inputs: usize,
@@ -89,6 +92,67 @@ pub fn estimate_transaction_fees(
     let vbytes = estimate_vbytes(number_of_inputs, script_type, multisig_config, outputs);
 
     current_fee_rate.fee_vb(vbytes as u64).unwrap()
+}
+
+#[cfg(feature = "rune")]
+pub struct EstimateEdictTxFeesArgs {
+    pub script_type: ScriptType,
+    pub number_of_inputs: usize,
+    pub current_fee_rate: FeeRate,
+    pub multisig_config: Option<MultisigConfig>,
+    pub rune_change_address: Address,
+    pub destination_address: Address,
+    pub change_address: Address,
+    pub rune: ordinals::RuneId,
+    pub rune_amount: u128,
+}
+
+/// Estimates the transaction fees for an edict transaction.
+#[cfg(feature = "rune")]
+pub fn estimate_edict_transaction_fees(args: EstimateEdictTxFeesArgs) -> Amount {
+    use crate::wallet::RUNE_POSTAGE;
+    let runestone = ordinals::Runestone {
+        edicts: vec![ordinals::Edict {
+            id: args.rune,
+            amount: args.rune_amount,
+            output: 2,
+        }],
+        etching: None,
+        mint: None,
+        pointer: None,
+    };
+
+    let runestone_out = TxOut {
+        value: Amount::ZERO,
+        script_pubkey: ScriptBuf::from_bytes(runestone.encipher().into_bytes()),
+    };
+    let rune_change_out = TxOut {
+        value: RUNE_POSTAGE,
+        script_pubkey: args.rune_change_address.script_pubkey(),
+    };
+    let rune_destination_out = TxOut {
+        value: RUNE_POSTAGE,
+        script_pubkey: args.destination_address.script_pubkey(),
+    };
+    let funding_change_out = TxOut {
+        value: Amount::ZERO,
+        script_pubkey: args.change_address.script_pubkey(),
+    };
+
+    let outputs = vec![
+        runestone_out,
+        rune_change_out,
+        rune_destination_out,
+        funding_change_out,
+    ];
+
+    estimate_transaction_fees(
+        args.script_type,
+        args.number_of_inputs,
+        args.current_fee_rate,
+        &args.multisig_config,
+        outputs,
+    )
 }
 
 fn estimate_vbytes(
@@ -286,5 +350,36 @@ mod tests {
 
         // Expected fee calculation: (150 + (5 * 65)) * 1 = 475 satoshis
         assert_eq!(fee, Amount::from_sat(tx_size as u64));
+    }
+
+    #[test]
+    #[cfg(feature = "rune")]
+    fn test_estimate_transaction_edict() {
+        use ordinals::RuneId;
+
+        let args = EstimateEdictTxFeesArgs {
+            script_type: ScriptType::P2TR,
+            number_of_inputs: 5,
+            current_fee_rate: FeeRate::from_sat_per_vb(1_u64).unwrap(),
+            multisig_config: None,
+            rune_change_address: "bc1pxwww0ct9ue7e8tdnlmug5m2tamfn7q06sahstg39ys4c9f3340qqxrdu9k"
+                .parse::<Address<NetworkUnchecked>>()
+                .unwrap()
+                .assume_checked(),
+            destination_address: "bc1pxwww0ct9ue7e8tdnlmug5m2tamfn7q06sahstg39ys4c9f3340qqxrdu9k"
+                .parse::<Address<NetworkUnchecked>>()
+                .unwrap()
+                .assume_checked(),
+            change_address: "bc1pxwww0ct9ue7e8tdnlmug5m2tamfn7q06sahstg39ys4c9f3340qqxrdu9k"
+                .parse::<Address<NetworkUnchecked>>()
+                .unwrap()
+                .assume_checked(),
+            rune: RuneId::new(219, 1).unwrap(),
+            rune_amount: 9500,
+        };
+
+        let fee = estimate_edict_transaction_fees(args);
+
+        assert_eq!(fee, Amount::from_sat(448));
     }
 }
