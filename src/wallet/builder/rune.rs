@@ -41,8 +41,8 @@ impl From<Runestone> for OrdRunestone {
 
 /// Arguments for the [`OrdTransactionBuilder::create_edict_transaction`] method.
 pub struct CreateEdictTxArgs {
-    /// Identifier of the rune to be transferred.
-    pub rune: RuneId,
+    /// Identifier and amount of the runes to be transferred.
+    pub runes: Vec<(RuneId, u128)>,
     /// Inputs that contain rune and funding BTC balances.
     pub inputs: Vec<TxInputInfo>,
     /// Address of the recipient of the rune transfer.
@@ -51,8 +51,6 @@ pub struct CreateEdictTxArgs {
     pub change_address: Address,
     /// Address that will receive leftovers of runes.
     pub rune_change_address: Address,
-    /// Amount of the rune to be transferred.
-    pub amount: u128,
     /// Current BTC fee rate.
     pub fee_rate: FeeRate,
 }
@@ -90,12 +88,18 @@ impl OrdTransactionBuilder {
     /// * Returns [`OrdError::InsufficientBalance`] if the inputs BTC amount is not enough
     ///   to cover the outputs and transaction fee.
     pub fn create_edict_transaction(&self, args: &CreateEdictTxArgs) -> OrdResult<Transaction> {
-        let runestone = OrdRunestone {
-            edicts: vec![Edict {
-                id: args.rune,
-                amount: args.amount,
+        let edicts = args
+            .runes
+            .iter()
+            .map(|(rune, amount)| Edict {
+                id: *rune,
+                amount: *amount,
                 output: 2,
-            }],
+            })
+            .collect();
+
+        let runestone = OrdRunestone {
+            edicts,
             etching: None,
             mint: None,
             pointer: None,
@@ -263,7 +267,7 @@ mod tests {
         let builder = OrdTransactionBuilder::new(public_key, ScriptType::P2WSH, wallet);
 
         let args = CreateEdictTxArgs {
-            rune: RuneId::new(219, 1).unwrap(),
+            runes: vec![(RuneId::new(219, 1).unwrap(), 9500)],
             inputs: vec![
                 TxInputInfo {
                     outpoint: OutPoint::new(
@@ -332,7 +336,6 @@ mod tests {
             )
             .unwrap()
             .assume_checked(),
-            amount: 9500,
             fee_rate: FeeRate::from_sat_per_vb(10).unwrap(),
         };
         let unsigned_tx = builder
