@@ -72,12 +72,11 @@ async fn main() -> anyhow::Result<()> {
     let destination = Address::from_str(&args.destination)?.assume_checked();
 
     let unsigned_tx = builder.create_edict_transaction(&CreateEdictTxArgs {
-        rune: args.rune_id,
+        runes: vec![(args.rune_id, amount)],
         inputs: inputs.clone(),
         destination,
         change_address: sender_address.clone(),
         rune_change_address: sender_address,
-        amount,
         fee_rate: FeeRate::from_sat_per_vb(10).unwrap(),
     })?;
 
