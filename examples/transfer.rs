@@ -5,7 +5,7 @@ use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, PrivateKey};
 use log::{debug, info};
 use ord_rs::wallet::{
-    CreateCommitTransactionArgsV2, RevealTransactionArgs, SignCommitTransactionArgs,
+    CreateCommitTransactionArgsV2, RevealTransactionArgs, SignCommitTransactionArgs, TaprootKeypair,
 };
 use ord_rs::{Brc20, OrdTransactionBuilder};
 
@@ -88,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
             leftovers_recipient: sender_address.clone(),
             commit_fee,
             reveal_fee,
+            taproot_keypair: Some(TaprootKeypair::Random),
         },
     )?;
     debug!("commit transaction: {commit_tx:?}");

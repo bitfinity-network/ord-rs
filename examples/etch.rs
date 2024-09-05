@@ -8,6 +8,7 @@ use bitcoin::{Address, Network, PrivateKey};
 use log::{debug, info};
 use ord_rs::wallet::{
     CreateCommitTransactionArgsV2, EtchingTransactionArgs, Runestone, SignCommitTransactionArgs,
+    TaprootKeypair,
 };
 use ord_rs::{Nft, OrdTransactionBuilder};
 use ordinals::{Etching, Rune, Terms};
@@ -123,6 +124,7 @@ async fn main() -> anyhow::Result<()> {
             leftovers_recipient: sender_address.clone(),
             commit_fee,
             reveal_fee,
+            taproot_keypair: Some(TaprootKeypair::Random),
         },
     )?;
     let signed_commit_tx = builder

@@ -247,7 +247,7 @@ mod tests {
     use hex_literal::hex;
 
     use super::*;
-    use crate::wallet::{CreateCommitTransactionArgsV2, LocalSigner};
+    use crate::wallet::{CreateCommitTransactionArgsV2, LocalSigner, TaprootKeypair};
     use crate::{Nft, SignCommitTransactionArgs, Wallet};
 
     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
@@ -383,6 +383,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "rand")]
     async fn test_should_append_runestone() {
         // this test refers to these testnet transactions, commit and reveal:
         // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
@@ -412,6 +413,7 @@ mod tests {
             leftovers_recipient: address.clone(),
             commit_fee: Amount::from_sat(2_500),
             reveal_fee: Amount::from_sat(4_700),
+            taproot_keypair: Some(TaprootKeypair::Random),
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)

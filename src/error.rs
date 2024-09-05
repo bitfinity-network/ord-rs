@@ -3,6 +3,8 @@ use thiserror::Error;
 /// Ordinal transaction handling error types
 #[derive(Error, Debug)]
 pub enum OrdError {
+    #[error("when using P2TR, the taproot keypair option must be provided")]
+    TaprootKeypairNotProvided,
     #[error("Hex codec error: {0}")]
     HexCodec(#[from] hex::FromHexError),
     #[error("Ord codec error: {0}")]

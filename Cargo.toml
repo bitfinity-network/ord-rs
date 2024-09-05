@@ -2,7 +2,7 @@
 name = "ord-rs"
 categories = ["cryptography::cryptocurrencies"]
 license = "MIT"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Finity Technologies"]
 description = "A library for working with Ordinal inscriptions."
 repository = "https://github.com/bitfinity-network/ord-rs"
@@ -10,17 +10,18 @@ documentation = "https://docs.rs/ord-rs"
 edition = "2021"
 
 [features]
-default = []
+default = ["rand"]
+rand = ["bitcoin/rand", "dep:rand"]
 rune = ["ordinals"]
 
 [dependencies]
 async-trait = "0.1"
-bitcoin = { version = "0.31", features = ["rand", "serde"] }
+bitcoin = { version = "0.31", features = ["serde"] }
 ciborium = "0.2"
 hex = "0.4"
 log = "0.4"
 ordinals = { version = "0.0.9", optional = true }
-rand = { version = "0.8" }
+rand = { version = "0.8", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = { version = "3", default-features = false, features = ["macros"] }
@@ -44,26 +45,32 @@ tokio = { version = "1", features = ["full"] }
 [[example]]
 name = "generate-address"
 path = "examples/generate_address.rs"
+required-features = ["rand"]
 
 [[example]]
 name = "transfer"
 path = "examples/transfer.rs"
+required-features = ["rand"]
 
 [[example]]
 name = "mint"
 path = "examples/mint.rs"
+required-features = ["rand"]
 
 [[example]]
 name = "deploy"
 path = "examples/deploy.rs"
+required-features = ["rand"]
 
 [[example]]
 name = "send-inscription"
 path = "examples/send_inscription.rs"
+required-features = ["rand"]
 
 [[example]]
 name = "print-script"
 path = "examples/print_script.rs"
+required-features = ["rand"]
 
 [[example]]
 name = "edict"

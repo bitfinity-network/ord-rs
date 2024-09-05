@@ -1,3 +1,6 @@
+pub mod signer;
+mod taproot;
+
 use bitcoin::absolute::LockTime;
 use bitcoin::bip32::DerivationPath;
 use bitcoin::script::{Builder as ScriptBuilder, PushBytesBuf};
@@ -6,10 +9,9 @@ use bitcoin::{
     secp256k1, Address, Amount, FeeRate, Network, OutPoint, PublicKey, ScriptBuf, Sequence,
     Transaction, TxIn, TxOut, Txid, Witness, XOnlyPublicKey,
 };
-use signer::Wallet;
 
-use self::taproot::generate_keypair;
-pub use self::taproot::TaprootPayload;
+use self::signer::Wallet;
+pub use self::taproot::{TaprootKeypair, TaprootPayload};
 use crate::inscription::Inscription;
 use crate::utils::constants::POSTAGE;
 use crate::utils::fees::{estimate_commit_fee, estimate_reveal_fee, MultisigConfig};
@@ -23,9 +25,6 @@ pub use rune::{CreateEdictTxArgs, EtchingTransactionArgs, Runestone, RUNE_POSTAG
 
 use crate::wallet::builder::signer::LocalSigner;
 
-pub mod signer;
-mod taproot;
-
 /// Ordinal-aware transaction builder for arbitrary (`Nft`)
 /// and `Brc20` inscriptions.
 pub struct OrdTransactionBuilder {
@@ -34,6 +33,29 @@ pub struct OrdTransactionBuilder {
     /// used to sign the reveal transaction when using P2TR
     taproot_payload: Option<TaprootPayload>,
     signer: Wallet,
+}
+
+/// Unspent transaction output to be used as input of a transaction
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Utxo {
+    pub id: Txid,
+    pub index: u32,
+    pub amount: Amount,
+}
+
+/// Output of a previous transaction to be used as an input.
+///
+/// This struct contains signature script in contrast to [Utxo] so it can be used to sign inputs
+/// from different addresses.
+#[derive(Debug, Clone)]
+pub struct TxInputInfo {
+    /// ID of the output.
+    pub outpoint: OutPoint,
+
+    /// Contents of the output.
+    pub tx_out: TxOut,
+
+    pub derivation_path: DerivationPath,
 }
 
 #[derive(Debug)]
@@ -54,6 +76,30 @@ where
     pub fee_rate: FeeRate,
     /// Multisig configuration, if applicable
     pub multisig_config: Option<MultisigConfig>,
+    /// Optional taproot keypair
+    pub taproot_keypair: Option<TaprootKeypair>,
+}
+
+#[derive(Debug)]
+/// Arguments for creating a commit transaction with fixed fees
+pub struct CreateCommitTransactionArgsV2<T>
+where
+    T: Inscription,
+{
+    /// UTXOs to be used as inputs of the transaction
+    pub inputs: Vec<Utxo>,
+    /// Inscription to write
+    pub inscription: T,
+    /// Address to send the leftovers BTC of the trasnsaction
+    pub leftovers_recipient: Address,
+    /// Fee to pay for the commit transaction
+    pub commit_fee: Amount,
+    /// Fee to pay for the reveal transaction
+    pub reveal_fee: Amount,
+    /// Script pubkey of the inputs
+    pub txin_script_pubkey: ScriptBuf,
+    /// Optional taproot keypair
+    pub taproot_keypair: Option<TaprootKeypair>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,7 +207,12 @@ impl OrdTransactionBuilder {
         // generate P2TR keyts
         let p2tr_keys = match self.script_type {
             ScriptType::P2WSH => None,
-            ScriptType::P2TR => Some(generate_keypair(&secp_ctx)),
+            ScriptType::P2TR => {
+                let taproot_keypair = args
+                    .taproot_keypair
+                    .ok_or(OrdError::TaprootKeypairNotProvided)?;
+                Some(taproot_keypair.generate_keypair(&secp_ctx))
+            }
         };
 
         // generate redeem script pubkey based on the current script type
@@ -403,7 +454,12 @@ impl OrdTransactionBuilder {
         // generate P2TR keyts
         let p2tr_keys = match self.script_type {
             ScriptType::P2WSH => None,
-            ScriptType::P2TR => Some(generate_keypair(&secp_ctx)),
+            ScriptType::P2TR => {
+                let taproot_keypair = args
+                    .taproot_keypair
+                    .ok_or(OrdError::TaprootKeypairNotProvided)?;
+                Some(taproot_keypair.generate_keypair(&secp_ctx))
+            }
         };
 
         // generate redeem script pubkey based on the current script type
@@ -499,49 +555,6 @@ impl OrdTransactionBuilder {
     }
 }
 
-#[derive(Debug)]
-/// Arguments for creating a commit transaction
-pub struct CreateCommitTransactionArgsV2<T>
-where
-    T: Inscription,
-{
-    /// UTXOs to be used as inputs of the transaction
-    pub inputs: Vec<Utxo>,
-    /// Inscription to write
-    pub inscription: T,
-    /// Address to send the leftovers BTC of the trasnsaction
-    pub leftovers_recipient: Address,
-    /// Fee to pay for the commit transaction
-    pub commit_fee: Amount,
-    /// Fee to pay for the reveal transaction
-    pub reveal_fee: Amount,
-    /// Script pubkey of the inputs
-    pub txin_script_pubkey: ScriptBuf,
-}
-
-/// Unspent transaction output to be used as input of a transaction
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Utxo {
-    pub id: Txid,
-    pub index: u32,
-    pub amount: Amount,
-}
-
-/// Output of a previous transaction to be used as an input.
-///
-/// This struct contains signature script in contrast to [Utxo] so it can be used to sign inputs
-/// from different addresses.
-#[derive(Debug, Clone)]
-pub struct TxInputInfo {
-    /// ID of the output.
-    pub outpoint: OutPoint,
-
-    /// Contents of the output.
-    pub tx_out: TxOut,
-
-    pub derivation_path: DerivationPath,
-}
-
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
@@ -557,6 +570,7 @@ mod test {
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
     #[tokio::test]
+    #[cfg(feature = "rand")]
     async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2wsh() {
         // this test refers to these testnet transactions, commit and reveal:
         // <https://mempool.space/testnet/tx/4472899344bce1a6c83c6ec45859f79ab622b55b3faf67e555e3e03cee5139e6>
@@ -581,6 +595,7 @@ mod test {
             leftovers_recipient: address.clone(),
             commit_fee: Amount::from_sat(2_500),
             reveal_fee: Amount::from_sat(4_700),
+            taproot_keypair: Some(TaprootKeypair::Random),
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
@@ -666,6 +681,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[cfg(feature = "rand")]
     async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
         // this test refers to these testnet transactions, commit and reveal:
         // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
@@ -690,6 +706,7 @@ mod test {
             leftovers_recipient: address.clone(),
             commit_fee: Amount::from_sat(2_500),
             reveal_fee: Amount::from_sat(4_700),
+            taproot_keypair: Some(TaprootKeypair::Random),
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
