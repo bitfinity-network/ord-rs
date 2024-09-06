@@ -19,7 +19,7 @@ use crate::{OrdError, OrdResult};
 #[async_trait::async_trait]
 pub trait BtcTxSigner {
     /// Retrieves the ECDSA public key at the given derivation path.
-    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> PublicKey;
+    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> OrdResult<PublicKey>;
 
     /// Signs a message with an ECDSA key and returns the signature.
     async fn sign_with_ecdsa(
@@ -80,10 +80,10 @@ impl LocalSigner {
 
 #[async_trait::async_trait]
 impl BtcTxSigner for LocalSigner {
-    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> PublicKey {
+    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> OrdResult<PublicKey> {
         let child = self.derived(derivation_path);
         let key_pair = child.to_keypair(&self.secp);
-        key_pair.public_key().into()
+        Ok(key_pair.public_key().into())
     }
 
     async fn sign_with_ecdsa(
@@ -269,7 +269,7 @@ impl Wallet {
                         .signer
                         .sign_with_ecdsa(message, &input.derivation_path)
                         .await?;
-                    let public_key = self.signer.ecdsa_public_key(&input.derivation_path).await;
+                    let public_key = self.signer.ecdsa_public_key(&input.derivation_path).await?;
                     let ord_signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
 
                     self.append_witness_to_input(
