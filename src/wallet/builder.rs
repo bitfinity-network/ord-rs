@@ -11,7 +11,7 @@ use bitcoin::{
 };
 
 use self::signer::Wallet;
-pub use self::taproot::{TaprootKeypair, TaprootPayload};
+pub use self::taproot::TaprootPayload;
 use crate::inscription::Inscription;
 use crate::utils::constants::POSTAGE;
 use crate::utils::fees::{estimate_commit_fee, estimate_reveal_fee, MultisigConfig};
@@ -76,8 +76,6 @@ where
     pub fee_rate: FeeRate,
     /// Multisig configuration, if applicable
     pub multisig_config: Option<MultisigConfig>,
-    /// Optional taproot keypair
-    pub taproot_keypair: Option<TaprootKeypair>,
 }
 
 #[derive(Debug)]
@@ -98,8 +96,6 @@ where
     pub reveal_fee: Amount,
     /// Script pubkey of the inputs
     pub txin_script_pubkey: ScriptBuf,
-    /// Optional taproot keypair
-    pub taproot_keypair: Option<TaprootKeypair>,
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +133,8 @@ pub struct RevealTransactionArgs {
     pub recipient_address: Address,
     /// The redeem script returned by `create_commit_transaction`
     pub redeem_script: ScriptBuf,
+    /// Derivation path for the keypair
+    pub derivation_path: Option<DerivationPath>,
 }
 
 /// Type of the script to use. Both are supported, but P2WSH may not be supported by all the indexers
@@ -195,7 +193,7 @@ impl OrdTransactionBuilder {
     }
 
     /// Creates the commit transaction.
-    pub fn build_commit_transaction<T>(
+    pub async fn build_commit_transaction<T>(
         &mut self,
         network: Network,
         recipient_address: Address,
@@ -206,21 +204,15 @@ impl OrdTransactionBuilder {
     {
         let secp_ctx = secp256k1::Secp256k1::new();
 
-        // generate P2TR keyts
-        let p2tr_keys = match self.script_type {
+        let p2tr_pubkey = match self.script_type {
+            ScriptType::P2TR => Some(self.signer.signer.get_schnorr_pubkey().await?),
             ScriptType::P2WSH => None,
-            ScriptType::P2TR => {
-                let taproot_keypair = args
-                    .taproot_keypair
-                    .ok_or(OrdError::TaprootKeypairNotProvided)?;
-                Some(taproot_keypair.generate_keypair(&secp_ctx))
-            }
         };
 
         // generate redeem script pubkey based on the current script type
         let redeem_script_pubkey = match self.script_type {
             ScriptType::P2WSH => RedeemScriptPubkey::Ecdsa(self.public_key),
-            ScriptType::P2TR => RedeemScriptPubkey::XPublickey(p2tr_keys.unwrap().1),
+            ScriptType::P2TR => RedeemScriptPubkey::XPublickey(p2tr_pubkey.unwrap()),
         };
 
         let redeem_script = self.generate_redeem_script(&args.inscription, redeem_script_pubkey)?;
@@ -243,8 +235,7 @@ impl OrdTransactionBuilder {
             ScriptType::P2TR => {
                 let taproot_payload = TaprootPayload::build(
                     &secp_ctx,
-                    p2tr_keys.unwrap().0,
-                    p2tr_keys.unwrap().1,
+                    p2tr_pubkey.unwrap(),
                     &redeem_script,
                     reveal_balance,
                     network,
@@ -394,11 +385,17 @@ impl OrdTransactionBuilder {
         };
 
         let tx = match self.taproot_payload.as_ref() {
-            Some(taproot_payload) => self.signer.sign_reveal_transaction_schnorr(
-                taproot_payload,
-                &args.redeem_script,
-                unsigned_tx,
-            ),
+            Some(taproot_payload) => {
+                self.signer
+                    .sign_reveal_transaction_schnorr(
+                        &self.public_key,
+                        taproot_payload,
+                        &args.redeem_script,
+                        unsigned_tx,
+                        &args.derivation_path.unwrap_or_default(),
+                    )
+                    .await
+            }
             None => {
                 self.signer
                     .sign_reveal_transaction_ecdsa(
@@ -444,7 +441,7 @@ impl OrdTransactionBuilder {
     }
 
     /// Creates the commit transaction with predetermined commit and reveal fees.
-    pub fn build_commit_transaction_with_fixed_fees<T>(
+    pub async fn build_commit_transaction_with_fixed_fees<T>(
         &mut self,
         network: Network,
         args: CreateCommitTransactionArgsV2<T>,
@@ -455,20 +452,15 @@ impl OrdTransactionBuilder {
         let secp_ctx = secp256k1::Secp256k1::new();
 
         // generate P2TR keyts
-        let p2tr_keys = match self.script_type {
+        let p2tr_pubkey = match self.script_type {
+            ScriptType::P2TR => Some(self.signer.signer.get_schnorr_pubkey().await?),
             ScriptType::P2WSH => None,
-            ScriptType::P2TR => {
-                let taproot_keypair = args
-                    .taproot_keypair
-                    .ok_or(OrdError::TaprootKeypairNotProvided)?;
-                Some(taproot_keypair.generate_keypair(&secp_ctx))
-            }
         };
 
         // generate redeem script pubkey based on the current script type
         let redeem_script_pubkey = match self.script_type {
             ScriptType::P2WSH => RedeemScriptPubkey::Ecdsa(self.public_key),
-            ScriptType::P2TR => RedeemScriptPubkey::XPublickey(p2tr_keys.unwrap().1),
+            ScriptType::P2TR => RedeemScriptPubkey::XPublickey(p2tr_pubkey.unwrap()),
         };
 
         // calc balance
@@ -499,8 +491,7 @@ impl OrdTransactionBuilder {
             ScriptType::P2TR => {
                 let taproot_payload = TaprootPayload::build(
                     &secp_ctx,
-                    p2tr_keys.unwrap().0,
-                    p2tr_keys.unwrap().1,
+                    p2tr_pubkey.unwrap(),
                     &redeem_script,
                     reveal_balance,
                     network,
@@ -598,10 +589,10 @@ mod test {
             leftovers_recipient: address.clone(),
             commit_fee: Amount::from_sat(2_500),
             reveal_fee: Amount::from_sat(4_700),
-            taproot_keypair: Some(TaprootKeypair::Random),
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
+            .await
             .unwrap();
 
         // sign
@@ -661,6 +652,7 @@ mod test {
                 },
                 recipient_address: recipient_address.clone(),
                 redeem_script: tx_result.redeem_script,
+                derivation_path: None,
             })
             .await
             .unwrap();
@@ -710,10 +702,10 @@ mod test {
             leftovers_recipient: address.clone(),
             commit_fee: Amount::from_sat(2_500),
             reveal_fee: Amount::from_sat(4_700),
-            taproot_keypair: Some(TaprootKeypair::Random),
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
+            .await
             .unwrap();
 
         assert!(builder.taproot_payload.is_some());
@@ -736,13 +728,7 @@ mod test {
             hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
         );
 
-        let encoded_pubkey = builder
-            .taproot_payload
-            .as_ref()
-            .unwrap()
-            .keypair
-            .public_key()
-            .serialize();
+        let encoded_pubkey = builder.taproot_payload.as_ref().unwrap().pubkey.serialize();
         println!("{} {}", encoded_pubkey.len(), hex::encode(encoded_pubkey));
 
         // check redeem script contains pubkey for taproot
@@ -767,6 +753,7 @@ mod test {
                 },
                 recipient_address: recipient_address.clone(),
                 redeem_script: tx_result.redeem_script,
+                derivation_path: None,
             })
             .await
             .unwrap();

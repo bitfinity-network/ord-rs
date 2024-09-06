@@ -5,7 +5,7 @@ use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{Address, Network, PrivateKey};
 use log::{debug, info};
 use ord_rs::wallet::{
-    CreateCommitTransactionArgsV2, RevealTransactionArgs, SignCommitTransactionArgs, TaprootKeypair,
+    CreateCommitTransactionArgsV2, RevealTransactionArgs, SignCommitTransactionArgs,
 };
 use ord_rs::{Brc20, OrdTransactionBuilder};
 
@@ -80,18 +80,19 @@ async fn main() -> anyhow::Result<()> {
         _ => panic!("invalid script type"),
     };
 
-    let commit_tx = builder.build_commit_transaction_with_fixed_fees(
-        network,
-        CreateCommitTransactionArgsV2 {
-            inputs: inputs.clone(),
-            inscription: Brc20::mint(ticker, amount),
-            txin_script_pubkey: sender_address.script_pubkey(),
-            leftovers_recipient: sender_address.clone(),
-            commit_fee,
-            reveal_fee,
-            taproot_keypair: Some(TaprootKeypair::Random),
-        },
-    )?;
+    let commit_tx = builder
+        .build_commit_transaction_with_fixed_fees(
+            network,
+            CreateCommitTransactionArgsV2 {
+                inputs: inputs.clone(),
+                inscription: Brc20::mint(ticker, amount),
+                txin_script_pubkey: sender_address.script_pubkey(),
+                leftovers_recipient: sender_address.clone(),
+                commit_fee,
+                reveal_fee,
+            },
+        )
+        .await?;
 
     let signed_commit_tx = builder
         .sign_commit_transaction(
@@ -126,6 +127,7 @@ async fn main() -> anyhow::Result<()> {
             },
             recipient_address: sender_address,
             redeem_script: commit_tx.redeem_script,
+            derivation_path: None,
         })
         .await?;
     debug!("reveal transaction: {reveal_transaction:?}");

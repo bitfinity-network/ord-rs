@@ -7,7 +7,7 @@ pub(crate) use builder::RUNE_POSTAGE;
 pub use builder::{
     CreateCommitTransaction, CreateCommitTransactionArgs, CreateCommitTransactionArgsV2,
     OrdTransactionBuilder, RedeemScriptPubkey, RevealTransactionArgs, ScriptType,
-    SignCommitTransactionArgs, TaprootKeypair, TaprootPayload, TxInputInfo, Utxo,
+    SignCommitTransactionArgs, TaprootPayload, TxInputInfo, Utxo,
 };
 #[cfg(feature = "rune")]
 pub use builder::{CreateEdictTxArgs, EtchingTransactionArgs, Runestone};
