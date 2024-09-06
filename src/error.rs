@@ -39,6 +39,8 @@ pub enum OrdError {
     InvalidInputs,
     #[error("Invalid script type")]
     InvalidScriptType,
+    #[error("custom error: {0}")]
+    Custom(String),
 }
 
 /// Inscription parsing errors.
