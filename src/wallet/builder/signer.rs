@@ -29,7 +29,10 @@ pub trait BtcTxSigner {
     ) -> Result<Signature, secp256k1::Error>;
 
     /// Returns the schnorr public key.
-    async fn get_schnorr_pubkey(&self) -> OrdResult<XOnlyPublicKey>;
+    async fn get_schnorr_pubkey(
+        &self,
+        derivation_path: &DerivationPath,
+    ) -> OrdResult<XOnlyPublicKey>;
 
     /// Signs a message with a Schnorr key and returns the signature.
     async fn sign_with_schnorr(
@@ -93,8 +96,11 @@ impl BtcTxSigner for LocalSigner {
     }
 
     /// Returns the schnorr public key.
-    async fn get_schnorr_pubkey(&self) -> OrdResult<XOnlyPublicKey> {
-        let keypair = self.master_key.to_keypair(&self.secp);
+    async fn get_schnorr_pubkey(
+        &self,
+        derivation_path: &DerivationPath,
+    ) -> OrdResult<XOnlyPublicKey> {
+        let keypair = self.derived(derivation_path).to_keypair(&self.secp);
         Ok(XOnlyPublicKey::from_keypair(&keypair).0)
     }
 

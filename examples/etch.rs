@@ -124,6 +124,7 @@ async fn main() -> anyhow::Result<()> {
                 leftovers_recipient: sender_address.clone(),
                 commit_fee,
                 reveal_fee,
+                derivation_path: None,
             },
         )
         .await?;

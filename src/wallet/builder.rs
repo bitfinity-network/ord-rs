@@ -76,6 +76,8 @@ where
     pub fee_rate: FeeRate,
     /// Multisig configuration, if applicable
     pub multisig_config: Option<MultisigConfig>,
+    /// Script pubkey of the inputs
+    pub derivation_path: Option<DerivationPath>,
 }
 
 #[derive(Debug)]
@@ -96,6 +98,8 @@ where
     pub reveal_fee: Amount,
     /// Script pubkey of the inputs
     pub txin_script_pubkey: ScriptBuf,
+    /// Script pubkey of the inputs
+    pub derivation_path: Option<DerivationPath>,
 }
 
 #[derive(Debug, Clone)]
@@ -205,7 +209,12 @@ impl OrdTransactionBuilder {
         let secp_ctx = secp256k1::Secp256k1::new();
 
         let p2tr_pubkey = match self.script_type {
-            ScriptType::P2TR => Some(self.signer.signer.get_schnorr_pubkey().await?),
+            ScriptType::P2TR => Some(
+                self.signer
+                    .signer
+                    .get_schnorr_pubkey(&args.derivation_path.unwrap_or_default())
+                    .await?,
+            ),
             ScriptType::P2WSH => None,
         };
 
@@ -453,7 +462,12 @@ impl OrdTransactionBuilder {
 
         // generate P2TR keyts
         let p2tr_pubkey = match self.script_type {
-            ScriptType::P2TR => Some(self.signer.signer.get_schnorr_pubkey().await?),
+            ScriptType::P2TR => Some(
+                self.signer
+                    .signer
+                    .get_schnorr_pubkey(&args.derivation_path.unwrap_or_default())
+                    .await?,
+            ),
             ScriptType::P2WSH => None,
         };
 
@@ -564,7 +578,6 @@ mod test {
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
     #[tokio::test]
-    #[cfg(feature = "rand")]
     async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2wsh() {
         // this test refers to these testnet transactions, commit and reveal:
         // <https://mempool.space/testnet/tx/4472899344bce1a6c83c6ec45859f79ab622b55b3faf67e555e3e03cee5139e6>
@@ -589,6 +602,7 @@ mod test {
             leftovers_recipient: address.clone(),
             commit_fee: Amount::from_sat(2_500),
             reveal_fee: Amount::from_sat(4_700),
+            derivation_path: None,
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
@@ -677,7 +691,6 @@ mod test {
     }
 
     #[tokio::test]
-    #[cfg(feature = "rand")]
     async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
         // this test refers to these testnet transactions, commit and reveal:
         // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
@@ -702,6 +715,7 @@ mod test {
             leftovers_recipient: address.clone(),
             commit_fee: Amount::from_sat(2_500),
             reveal_fee: Amount::from_sat(4_700),
+            derivation_path: None,
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
