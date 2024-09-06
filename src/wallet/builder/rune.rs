@@ -425,6 +425,7 @@ mod tests {
         let sign_args = SignCommitTransactionArgs {
             inputs,
             txin_script_pubkey: address.script_pubkey(),
+            derivation_path: None,
         };
         let tx = builder
             .sign_commit_transaction(tx_result.unsigned_tx, sign_args)

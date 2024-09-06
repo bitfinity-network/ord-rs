@@ -103,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
             SignCommitTransactionArgs {
                 inputs,
                 txin_script_pubkey: sender_address.script_pubkey(),
+                derivation_path: None,
             },
         )
         .await?;

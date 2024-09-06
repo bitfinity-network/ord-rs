@@ -108,6 +108,8 @@ pub struct SignCommitTransactionArgs {
     pub inputs: Vec<Utxo>,
     /// Script pubkey of the inputs
     pub txin_script_pubkey: ScriptBuf,
+    /// Script pubkey of the inputs
+    pub derivation_path: Option<DerivationPath>,
 }
 
 #[derive(Debug, Clone)]
@@ -344,6 +346,7 @@ impl OrdTransactionBuilder {
                 &args.inputs,
                 unsigned_tx,
                 &args.txin_script_pubkey,
+                &args.derivation_path.unwrap_or_default(),
             )
             .await
     }
@@ -605,6 +608,7 @@ mod test {
         let sign_args = SignCommitTransactionArgs {
             inputs,
             txin_script_pubkey: address.script_pubkey(),
+            derivation_path: None,
         };
         let tx = builder
             .sign_commit_transaction(tx_result.unsigned_tx, sign_args)
@@ -718,6 +722,7 @@ mod test {
         let sign_args = SignCommitTransactionArgs {
             inputs,
             txin_script_pubkey: address.script_pubkey(),
+            derivation_path: None,
         };
         let tx = builder
             .sign_commit_transaction(tx_result.unsigned_tx, sign_args)

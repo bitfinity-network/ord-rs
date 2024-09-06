@@ -119,6 +119,7 @@ impl Wallet {
         inputs: &[Utxo],
         transaction: Transaction,
         txin_script: &ScriptBuf,
+        derivation_path: &DerivationPath,
     ) -> OrdResult<Transaction> {
         self.sign_ecdsa(
             own_pubkey,
@@ -126,6 +127,7 @@ impl Wallet {
             transaction,
             txin_script,
             TransactionType::Commit,
+            derivation_path,
         )
         .await
     }
@@ -143,6 +145,7 @@ impl Wallet {
             transaction,
             redeem_script,
             TransactionType::Reveal,
+            &DerivationPath::default(),
         )
         .await
     }
@@ -285,6 +288,7 @@ impl Wallet {
         transaction: Transaction,
         script: &ScriptBuf,
         transaction_type: TransactionType,
+        derivation_path: &DerivationPath,
     ) -> OrdResult<Transaction> {
         let mut hash = SighashCache::new(transaction.clone());
         for (index, input) in utxos.iter().enumerate() {
@@ -306,7 +310,7 @@ impl Wallet {
             let message = Message::from(sighash);
             let signature = self
                 .signer
-                .sign_with_ecdsa(message, &DerivationPath::default())
+                .sign_with_ecdsa(message, derivation_path)
                 .await?;
 
             // append witness
