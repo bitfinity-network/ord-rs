@@ -212,7 +212,7 @@ impl OrdTransactionBuilder {
             ScriptType::P2TR => Some(
                 self.signer
                     .signer
-                    .get_schnorr_pubkey(&args.derivation_path.unwrap_or_default())
+                    .schnorr_public_key(&args.derivation_path.unwrap_or_default())
                     .await?,
             ),
             ScriptType::P2WSH => None,
@@ -465,7 +465,7 @@ impl OrdTransactionBuilder {
             ScriptType::P2TR => Some(
                 self.signer
                     .signer
-                    .get_schnorr_pubkey(&args.derivation_path.unwrap_or_default())
+                    .schnorr_public_key(&args.derivation_path.unwrap_or_default())
                     .await?,
             ),
             ScriptType::P2WSH => None,
