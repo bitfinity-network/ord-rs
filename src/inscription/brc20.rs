@@ -1,4 +1,6 @@
-//! An implementation of the [BRC20 Token Standard](https://domo-2.gitbook.io/brc-20-experiment),
+//! Brc20
+//!
+//! An implementation of the [BRC20 Token Standard](https://domo-2.gitbook.io/brc-20-experiment)
 //! an experiment to see if [Ordinal Theory](https://docs.ordinals.com/) can facilitate fungibility on Bitcoin.
 //!
 //! 1. Deployments initialize the BRC-20. Do not affect state.
