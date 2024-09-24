@@ -10,5 +10,6 @@ pub use builder::{
     SignCommitTransactionArgs, TaprootPayload, TxInputInfo, Utxo,
 };
 #[cfg(feature = "rune")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rune")))]
 pub use builder::{CreateEdictTxArgs, EtchingTransactionArgs, Runestone};
 pub use parser::OrdParser;

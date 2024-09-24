@@ -1,6 +1,6 @@
 //! NFT
 //!
-//! Closely follows https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs
+//! Closely follows <https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs>
 
 use std::io::Cursor;
 use std::mem;

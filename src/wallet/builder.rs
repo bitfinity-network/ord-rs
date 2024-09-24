@@ -19,8 +19,10 @@ use crate::utils::push_bytes::bytes_to_push_bytes;
 use crate::{OrdError, OrdResult};
 
 #[cfg(feature = "rune")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rune")))]
 mod rune;
 #[cfg(feature = "rune")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rune")))]
 pub use rune::{CreateEdictTxArgs, EtchingTransactionArgs, Runestone, RUNE_POSTAGE};
 
 use crate::wallet::builder::signer::LocalSigner;

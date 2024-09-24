@@ -18,7 +18,7 @@ use crate::{OrdError, OrdResult, OrdTransactionBuilder};
 /// The value is same as in `ord` tool.
 pub const RUNE_POSTAGE: Amount = Amount::from_sat(10_000);
 
-#[cfg(feature = "rune")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rune")))]
 /// Runestone wrapper; implemented because FOR SOME REASONS, the `Runestone` of `ordinals` doesn't implement Clone...
 #[derive(Debug, Default, Clone)]
 pub struct Runestone {
@@ -28,7 +28,7 @@ pub struct Runestone {
     pub pointer: Option<u32>,
 }
 
-#[cfg(feature = "rune")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rune")))]
 impl From<Runestone> for OrdRunestone {
     fn from(runestone: Runestone) -> Self {
         OrdRunestone {
@@ -41,6 +41,7 @@ impl From<Runestone> for OrdRunestone {
 }
 
 /// Arguments for the [`OrdTransactionBuilder::create_edict_transaction`] method.
+#[cfg_attr(docsrs, doc(cfg(feature = "rune")))]
 pub struct CreateEdictTxArgs {
     /// Identifier and amount of the runes to be transferred.
     pub runes: Vec<(RuneId, u128)>,
@@ -66,6 +67,7 @@ impl CreateEdictTxArgs {
 
 /// Arguments for creating a etching reveal transaction
 #[derive(Debug, Clone)]
+#[cfg_attr(docsrs, doc(cfg(feature = "rune")))]
 pub struct EtchingTransactionArgs {
     /// Transaction input (output of commit transaction)
     pub input: Utxo,
@@ -79,6 +81,7 @@ pub struct EtchingTransactionArgs {
     pub derivation_path: Option<DerivationPath>,
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "rune")))]
 impl OrdTransactionBuilder {
     /// Creates an unsigned rune edict transaction.
     ///
