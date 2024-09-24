@@ -1,4 +1,5 @@
 use bitcoin::absolute::LockTime;
+use bitcoin::bip32::DerivationPath;
 use bitcoin::transaction::Version;
 use bitcoin::{
     Address, Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
@@ -74,6 +75,8 @@ pub struct EtchingTransactionArgs {
     pub redeem_script: ScriptBuf,
     /// Runestone to append to the tx outputs
     pub runestone: Runestone,
+    /// The derivation path of the input
+    pub derivation_path: Option<DerivationPath>,
 }
 
 impl OrdTransactionBuilder {
@@ -214,11 +217,17 @@ impl OrdTransactionBuilder {
         };
 
         let tx = match self.taproot_payload.as_ref() {
-            Some(taproot_payload) => self.signer.sign_reveal_transaction_schnorr(
-                taproot_payload,
-                &args.redeem_script,
-                unsigned_tx,
-            ),
+            Some(taproot_payload) => {
+                self.signer
+                    .sign_reveal_transaction_schnorr(
+                        &self.public_key,
+                        taproot_payload,
+                        &args.redeem_script,
+                        unsigned_tx,
+                        &args.derivation_path.unwrap_or_default(),
+                    )
+                    .await
+            }
             None => {
                 self.signer
                     .sign_reveal_transaction_ecdsa(
@@ -247,7 +256,7 @@ mod tests {
     use hex_literal::hex;
 
     use super::*;
-    use crate::wallet::{CreateCommitTransactionArgsV2, LocalSigner, TaprootKeypair};
+    use crate::wallet::{CreateCommitTransactionArgsV2, LocalSigner};
     use crate::{Nft, SignCommitTransactionArgs, Wallet};
 
     // <https://mempool.space/testnet/address/tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark>
@@ -383,7 +392,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "rand")]
     async fn test_should_append_runestone() {
         // this test refers to these testnet transactions, commit and reveal:
         // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
@@ -413,10 +421,11 @@ mod tests {
             leftovers_recipient: address.clone(),
             commit_fee: Amount::from_sat(2_500),
             reveal_fee: Amount::from_sat(4_700),
-            taproot_keypair: Some(TaprootKeypair::Random),
+            derivation_path: None,
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
+            .await
             .unwrap();
 
         assert!(builder.taproot_payload.is_some());
@@ -439,13 +448,7 @@ mod tests {
             hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
         );
 
-        let encoded_pubkey = builder
-            .taproot_payload
-            .as_ref()
-            .unwrap()
-            .keypair
-            .public_key()
-            .serialize();
+        let encoded_pubkey = builder.taproot_payload.as_ref().unwrap().pubkey.serialize();
         println!("{} {}", encoded_pubkey.len(), hex::encode(encoded_pubkey));
 
         // check redeem script contains pubkey for taproot
@@ -500,6 +503,7 @@ mod tests {
                     mint: None,
                     pointer: None,
                 },
+                derivation_path: None,
             })
             .await
             .unwrap();

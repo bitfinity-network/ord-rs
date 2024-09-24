@@ -7,7 +7,7 @@ use bitcoin::sighash::{Prevouts, SighashCache};
 use bitcoin::taproot::{ControlBlock, LeafVersion};
 use bitcoin::{
     Network, PrivateKey, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, Transaction, TxOut,
-    Witness,
+    Witness, XOnlyPublicKey,
 };
 
 use super::super::builder::Utxo;
@@ -19,7 +19,7 @@ use crate::{OrdError, OrdResult};
 #[async_trait::async_trait]
 pub trait BtcTxSigner {
     /// Retrieves the ECDSA public key at the given derivation path.
-    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> PublicKey;
+    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> OrdResult<PublicKey>;
 
     /// Signs a message with an ECDSA key and returns the signature.
     async fn sign_with_ecdsa(
@@ -28,6 +28,13 @@ pub trait BtcTxSigner {
         derivation_path: &DerivationPath,
     ) -> Result<Signature, secp256k1::Error>;
 
+    /// Returns the schnorr public key.
+    async fn schnorr_public_key(
+        &self,
+        derivation_path: &DerivationPath,
+    ) -> OrdResult<XOnlyPublicKey>;
+
+    /// Signs a message with a Schnorr key and returns the signature.
     async fn sign_with_schnorr(
         &self,
         message: Message,
@@ -73,10 +80,10 @@ impl LocalSigner {
 
 #[async_trait::async_trait]
 impl BtcTxSigner for LocalSigner {
-    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> PublicKey {
+    async fn ecdsa_public_key(&self, derivation_path: &DerivationPath) -> OrdResult<PublicKey> {
         let child = self.derived(derivation_path);
         let key_pair = child.to_keypair(&self.secp);
-        key_pair.public_key().into()
+        Ok(key_pair.public_key().into())
     }
 
     async fn sign_with_ecdsa(
@@ -86,6 +93,15 @@ impl BtcTxSigner for LocalSigner {
     ) -> Result<Signature, secp256k1::Error> {
         let private_key = self.derived(derivation_path);
         Ok(self.secp.sign_ecdsa(&message, &private_key.private_key))
+    }
+
+    /// Returns the schnorr public key.
+    async fn schnorr_public_key(
+        &self,
+        derivation_path: &DerivationPath,
+    ) -> OrdResult<XOnlyPublicKey> {
+        let keypair = self.derived(derivation_path).to_keypair(&self.secp);
+        Ok(XOnlyPublicKey::from_keypair(&keypair).0)
     }
 
     async fn sign_with_schnorr(
@@ -150,11 +166,13 @@ impl Wallet {
         .await
     }
 
-    pub fn sign_reveal_transaction_schnorr(
+    pub async fn sign_reveal_transaction_schnorr(
         &mut self,
+        own_pubkey: &PublicKey,
         taproot: &TaprootPayload,
         redeem_script: &ScriptBuf,
         transaction: Transaction,
+        derivation_path: &DerivationPath,
     ) -> OrdResult<Transaction> {
         let prevouts_array = vec![taproot.prevouts.clone()];
         let prevouts = Prevouts::All(&prevouts_array);
@@ -168,11 +186,10 @@ impl Wallet {
         )?;
 
         let msg = secp256k1::Message::from_digest(sighash_sig.to_byte_array());
-        let sig = self.secp.sign_schnorr_no_aux_rand(&msg, &taproot.keypair);
+        let sig = self.signer.sign_with_schnorr(msg, derivation_path).await?;
 
         // verify
-        self.secp
-            .verify_schnorr(&sig, &msg, &taproot.keypair.x_only_public_key().0)?;
+        self.secp.verify_schnorr(&sig, &msg, &taproot.pubkey)?;
 
         // append witness
         let signature = bitcoin::taproot::Signature {
@@ -184,7 +201,7 @@ impl Wallet {
             &mut sighash_cache,
             signature,
             0,
-            &taproot.keypair.public_key(),
+            &own_pubkey.inner,
             Some(redeem_script),
             Some(&taproot.control_block),
         )?;
@@ -197,6 +214,7 @@ impl Wallet {
         prev_outs: &[&TxOut],
         index: usize,
         sighash_cache: &mut SighashCache<Transaction>,
+        derivation_path: &DerivationPath,
     ) -> OrdResult<()> {
         let prevouts = Prevouts::All(prev_outs);
         let sighash = sighash_cache.taproot_key_spend_signature_hash(
@@ -206,10 +224,7 @@ impl Wallet {
         )?;
 
         let msg = Message::from(sighash);
-        let signature = self
-            .signer
-            .sign_with_schnorr(msg, &DerivationPath::default())
-            .await?;
+        let signature = self.signer.sign_with_schnorr(msg, derivation_path).await?;
 
         let signature = bitcoin::taproot::Signature {
             sig: signature,
@@ -254,7 +269,7 @@ impl Wallet {
                         .signer
                         .sign_with_ecdsa(message, &input.derivation_path)
                         .await?;
-                    let public_key = self.signer.ecdsa_public_key(&input.derivation_path).await;
+                    let public_key = self.signer.ecdsa_public_key(&input.derivation_path).await?;
                     let ord_signature = bitcoin::ecdsa::Signature::sighash_all(signature).into();
 
                     self.append_witness_to_input(
@@ -271,6 +286,7 @@ impl Wallet {
                         &prev_outs.iter().map(|v| &v.tx_out).collect::<Vec<_>>(),
                         index,
                         &mut cache,
+                        &input.derivation_path,
                     )
                     .await?
                 }

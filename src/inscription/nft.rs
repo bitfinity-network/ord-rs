@@ -1,4 +1,5 @@
 //! NFT
+//!
 //! Closely follows https://github.com/ordinals/ord/blob/master/src/inscriptions/inscription.rs
 
 use std::io::Cursor;
@@ -16,8 +17,11 @@ use crate::utils::push_bytes::bytes_to_push_bytes;
 use crate::wallet::RedeemScriptPubkey;
 use crate::{Inscription, InscriptionParseError, OrdError, OrdResult};
 
-/// Represents an arbitrary Ordinal inscription. We're "unofficially" referring to this as an NFT
-/// (e.g., like an ERC721 token). Ordinal inscriptions allow for the embedding of data directly
+/// Represents an arbitrary Ordinal inscription.
+///
+/// We're "unofficially" referring to this as an NFT (e.g., like an ERC721 token).
+///
+/// Ordinal inscriptions allow for the embedding of data directly
 /// into individual satoshis on the Bitcoin blockchain, enabling a unique form of digital
 /// artifact creation and ownership tracking.
 ///
