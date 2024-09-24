@@ -257,15 +257,13 @@ impl OrdTransactionBuilder {
         };
         debug!("script_output_address: {script_output_address}");
 
-        let mut leftover_amount = 0;
-
         let mut tx_out = vec![
             TxOut {
                 value: Amount::from_sat(reveal_balance),
                 script_pubkey: script_output_address.script_pubkey(),
             },
             TxOut {
-                value: Amount::from_sat(leftover_amount),
+                value: Amount::ZERO, // placeholder for leftover amount, which is calculated later
                 script_pubkey: args.txin_script_pubkey.clone(),
             },
         ];
@@ -303,7 +301,7 @@ impl OrdTransactionBuilder {
             .iter()
             .map(|input| input.amount.to_sat())
             .sum::<u64>();
-        leftover_amount = input_amount
+        let leftover_amount = input_amount
             .checked_sub(POSTAGE)
             .and_then(|v| v.checked_sub(commit_fee.to_sat()))
             .and_then(|v| v.checked_sub(reveal_fee.to_sat()))
@@ -477,6 +475,9 @@ impl OrdTransactionBuilder {
             ScriptType::P2TR => RedeemScriptPubkey::XPublickey(p2tr_pubkey.unwrap()),
         };
 
+        let redeem_script = self.generate_redeem_script(&args.inscription, redeem_script_pubkey)?;
+        debug!("redeem_script: {redeem_script}");
+
         // calc balance
         // exceeding amount of transaction to send to leftovers recipient
         let input_amount = args
@@ -498,8 +499,6 @@ impl OrdTransactionBuilder {
         debug!("reveal_balance: {reveal_balance}");
 
         // get p2wsh or p2tr address for output of inscription
-        let redeem_script = self.generate_redeem_script(&args.inscription, redeem_script_pubkey)?;
-        debug!("redeem_script: {redeem_script}");
         let script_output_address = match self.script_type {
             ScriptType::P2WSH => Address::p2wsh(&redeem_script, network),
             ScriptType::P2TR => {
@@ -578,7 +577,8 @@ mod test {
     const WIF: &str = "cVkWbHmoCx6jS8AyPNQqvFr8V9r2qzDHJLaxGDQgDJfxT73w6fuU";
 
     #[tokio::test]
-    async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2wsh() {
+    async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2wsh_with_fixed_rate(
+    ) {
         // this test refers to these testnet transactions, commit and reveal:
         // <https://mempool.space/testnet/tx/4472899344bce1a6c83c6ec45859f79ab622b55b3faf67e555e3e03cee5139e6>
         // <https://mempool.space/testnet/tx/c769750df54ee38fe2bae876dbf1632c779c3af780958a19cee1ca0497c78e80>
@@ -691,7 +691,8 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
+    async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr_with_fixed_rate(
+    ) {
         // this test refers to these testnet transactions, commit and reveal:
         // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
         // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
@@ -719,6 +720,92 @@ mod test {
         };
         let tx_result = builder
             .build_commit_transaction_with_fixed_fees(Network::Testnet, commit_transaction_args)
+            .await
+            .unwrap();
+
+        assert!(builder.taproot_payload.is_some());
+
+        // sign
+        let sign_args = SignCommitTransactionArgs {
+            inputs,
+            txin_script_pubkey: address.script_pubkey(),
+            derivation_path: None,
+        };
+        let tx = builder
+            .sign_commit_transaction(tx_result.unsigned_tx, sign_args)
+            .await
+            .unwrap();
+
+        let witness = tx.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 2);
+        assert_eq!(
+            witness[1],
+            hex!("02d1c2aebced475b0c672beb0336baa775a44141263ee82051b5e57ad0f2248240")
+        );
+
+        let encoded_pubkey = builder.taproot_payload.as_ref().unwrap().pubkey.serialize();
+        println!("{} {}", encoded_pubkey.len(), hex::encode(encoded_pubkey));
+
+        // check redeem script contains pubkey for taproot
+        let redeem_script = &tx_result.redeem_script;
+        assert_eq!(
+            redeem_script.as_bytes()[0],
+            bitcoin::opcodes::all::OP_PUSHBYTES_32.to_u8()
+        );
+
+        let tx_id = tx.txid();
+        let recipient_address = Address::from_str("tb1qax89amll2uas5k92tmuc8rdccmqddqw94vrr86")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
+
+        let reveal_transaction = builder
+            .build_reveal_transaction(RevealTransactionArgs {
+                input: Utxo {
+                    id: tx_id,
+                    index: 0,
+                    amount: tx_result.reveal_balance,
+                },
+                recipient_address: recipient_address.clone(),
+                redeem_script: tx_result.redeem_script,
+                derivation_path: None,
+            })
+            .await
+            .unwrap();
+
+        let witness = reveal_transaction.input[0].witness.clone().to_vec();
+        assert_eq!(witness.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_should_build_transfer_for_brc20_transactions_from_existing_data_with_p2tr() {
+        // this test refers to these testnet transactions, commit and reveal:
+        // <https://mempool.space/testnet/tx/973f78eb7b3cc666dc4133ff6381c363fd29edda0560d36ea3cfd31f1e85d9f9>
+        // <https://mempool.space/testnet/tx/a35802655b63f1c99c1fd3ff8fdf3415f3abb735d647d402c0af5e9a73cbe4c6>
+        // made by address tb1qzc8dhpkg5e4t6xyn4zmexxljc4nkje59dg3ark
+        let private_key = PrivateKey::from_wif(WIF).unwrap();
+        let public_key = private_key.public_key(&Secp256k1::new());
+        let address = Address::p2wpkh(&public_key, Network::Testnet).unwrap();
+
+        let mut builder = OrdTransactionBuilder::p2tr(private_key);
+
+        let inputs = vec![Utxo {
+            id: Txid::from_str("791b415dc6946d864d368a0e5ec5c09ee2ad39cf298bc6e3f9aec293732cfda7")
+                .unwrap(), // the transaction that funded our wallet
+            index: 1,
+            amount: Amount::from_sat(8_000),
+        }];
+        let commit_transaction_args = CreateCommitTransactionArgs {
+            inputs: inputs.clone(),
+            txin_script_pubkey: address.script_pubkey(),
+            inscription: Brc20::transfer("mona".to_string(), 100),
+            leftovers_recipient: address.clone(),
+            fee_rate: FeeRate::from_sat_per_vb(1).unwrap(),
+            derivation_path: None,
+            multisig_config: None,
+        };
+        let tx_result = builder
+            .build_commit_transaction(Network::Testnet, address.clone(), commit_transaction_args)
             .await
             .unwrap();
 
