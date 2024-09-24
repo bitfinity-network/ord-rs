@@ -79,3 +79,7 @@ required-features = ["rune"]
 name = "etch"
 path = "examples/etch.rs"
 required-features = ["rune"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
