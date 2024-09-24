@@ -76,7 +76,7 @@ where
     pub fee_rate: FeeRate,
     /// Multisig configuration, if applicable
     pub multisig_config: Option<MultisigConfig>,
-    /// Script pubkey of the inputs
+    /// Derivation path for the keypair
     pub derivation_path: Option<DerivationPath>,
 }
 
@@ -98,7 +98,7 @@ where
     pub reveal_fee: Amount,
     /// Script pubkey of the inputs
     pub txin_script_pubkey: ScriptBuf,
-    /// Script pubkey of the inputs
+    /// Derivation path for the keypair
     pub derivation_path: Option<DerivationPath>,
 }
 
