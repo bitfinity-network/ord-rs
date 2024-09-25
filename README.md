@@ -1,21 +1,14 @@
 # ord-rs
 
+[![license-mit](https://img.shields.io/badge/License-MIT-teal.svg)](https://opensource.org/license/mit/)
+[![build-test](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml/badge.svg)](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml)
+[![downloads](https://img.shields.io/crates/d/ord-rs.svg)](https://crates.io/crates/ord-rs)
+[![latest version](https://img.shields.io/crates/v/ord-rs.svg)](https://crates.io/crates/ord-rs)
+
 A library for working with Ordinal inscriptions.
 
-## Status
-
-### Done
-
-- [x] [inscription](src/inscription.rs): `Brc20` and `Nft` inscription types.
-- [x] [wallet](src/wallet.rs): Transaction builder, signer, and parser.
-
-### TODO
-
-- [ ] [indexer](src/indexer.rs): Scans the Bitcoin blockchain to catalog, organize, and provide information about Ordinal inscriptions.
-
-------------------------------------------------------------------------------------------------------------------------------
-
-[![build-test](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml/badge.svg)](https://github.com/bitfinity-network/ord-rs/actions/workflows/build-test.yml)
+This library provides a set of tools for working with Ordinal inscriptions, including creating, parsing, and signing transactions.
+It allows you to work with both **BRC20, runes and generic inscriptions**.
 
 ## Get started
 
